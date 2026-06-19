@@ -14,8 +14,13 @@ class PredictionEngine:
         task: Dict[str, Any],
         behavior_patterns: Dict[str, Any],
     ) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            raise ValueError("task must be a dictionary.")
+        if behavior_patterns is None:
+            behavior_patterns = {}
+
         default_hour = self._resolve_hour(task, behavior_patterns, 0)
-        duration = float(task.get("estimated_duration") or task.get("actual_duration") or 1.0)
+        duration = self._resolve_duration(task)
         prediction = behavior_engine.predict_task_productivity(
             hour_of_day=default_hour,
             task_type=str(task.get("task_type", "general")),
@@ -44,6 +49,10 @@ class PredictionEngine:
         tasks: List[Dict[str, Any]],
         behavior_patterns: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
+        if tasks is None:
+            raise ValueError("tasks must be a list of dictionaries.")
+        if behavior_patterns is None:
+            behavior_patterns = {}
         return [
             self._predict_with_index(behavior_engine, task, behavior_patterns, index)
             for index, task in enumerate(tasks)
@@ -56,8 +65,10 @@ class PredictionEngine:
         behavior_patterns: Dict[str, Any],
         index: int,
     ) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            raise ValueError("Each task must be a dictionary.")
         default_hour = self._resolve_hour(task, behavior_patterns, index)
-        duration = float(task.get("estimated_duration") or task.get("actual_duration") or 1.0)
+        duration = self._resolve_duration(task)
         prediction = behavior_engine.predict_task_productivity(
             hour_of_day=default_hour,
             task_type=str(task.get("task_type", "general")),
@@ -75,14 +86,16 @@ class PredictionEngine:
         behavior_patterns: Dict[str, Any],
         index: int,
     ) -> int:
-        if task.get("optimized_hour") is not None:
-            return int(task["optimized_hour"])
-        if task.get("scheduled_hour") is not None:
-            return int(task["scheduled_hour"])
-        if task.get("hour_of_day") is not None:
-            return int(task["hour_of_day"])
+        for key in ("optimized_hour", "scheduled_hour", "hour_of_day"):
+            hour = self._safe_hour(task.get(key))
+            if hour is not None:
+                return hour
 
-        best_focus_hours = [int(hour) for hour in behavior_patterns.get("best_focus_hours", [])]
+        best_focus_hours = [
+            hour
+            for hour in (self._safe_hour(item) for item in behavior_patterns.get("best_focus_hours", []))
+            if hour is not None
+        ]
         if best_focus_hours:
             return best_focus_hours[index % len(best_focus_hours)]
         return 10
@@ -97,6 +110,36 @@ class PredictionEngine:
         predicted_productivity: float,
         behavior_patterns: Dict[str, Any],
     ) -> float:
-        average_completion_ratio = float(behavior_patterns.get("average_completion_time", 1.0))
+        average_completion_ratio = self._safe_positive_float(
+            behavior_patterns.get("average_completion_time", 1.0),
+            default=1.0,
+        )
         productivity_adjustment = max(0.65, 1.2 - (predicted_productivity / 200.0))
         return max(0.25, base_duration * average_completion_ratio * productivity_adjustment)
+
+    def _resolve_duration(self, task: Dict[str, Any]) -> float:
+        duration = self._safe_positive_float(
+            task.get("estimated_duration", task.get("actual_duration", 1.0)),
+            default=1.0,
+        )
+        return duration
+
+    def _safe_positive_float(self, value: Any, default: float = 1.0) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return default
+        if number <= 0:
+            return default
+        return number
+
+    def _safe_hour(self, value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            hour = int(value)
+        except (TypeError, ValueError):
+            return None
+        if 0 <= hour <= 23:
+            return hour
+        return None

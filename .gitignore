@@ -30,3 +30,14 @@ Thumbs.db
 
 # HuggingFace cache
 .cache/
+
+artifacts/
+backend/artifacts/
+
+
+.env
+.env.local
+
+
+coverage/
+htmlcov/
