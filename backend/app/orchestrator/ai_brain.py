@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import asdict, is_dataclass
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
@@ -81,6 +82,8 @@ class AIBrain:
         else:
             raise TypeError("Scheduler must expose generate, generate_schedule, or generate_from_order.")
 
+        if not isinstance(schedule, dict):
+            raise ValueError("Scheduler must return a dictionary schedule.")
         self._last_schedule = schedule
         logger.info("Schedule generated with blocks=%s.", list(schedule.keys()))
         return schedule
@@ -93,7 +96,7 @@ class AIBrain:
         simulate = getattr(forecast_engine, "simulate", None)
         if not callable(simulate):
             raise TypeError("Forecast engine must expose simulate().")
-        forecast_score = float(simulate())
+        forecast_score = self._finite_float(simulate(), "forecast_score")
         self._last_forecast_score = forecast_score
         logger.info("Forecast complete with score=%.3f.", forecast_score)
         return forecast_score
@@ -130,11 +133,11 @@ class AIBrain:
     def _evaluate(self, day: Day, schedule: Dict[str, Any]) -> Dict[str, float]:
         evaluator = DayEvaluator(day, schedule)
         evaluation = {
-            "productivity_score": float(evaluator.productivity_score()),
-            "priority_score": float(evaluator.priority_score()),
-            "energy_alignment": float(evaluator.energy_alignment_score()),
-            "stress_penalty": float(evaluator.stress_penalty()),
-            "total_score": float(evaluator.total_score()),
+            "productivity_score": self._finite_float(evaluator.productivity_score(), "productivity_score"),
+            "priority_score": self._finite_float(evaluator.priority_score(), "priority_score"),
+            "energy_alignment": self._finite_float(evaluator.energy_alignment_score(), "energy_alignment"),
+            "stress_penalty": self._finite_float(evaluator.stress_penalty(), "stress_penalty"),
+            "total_score": self._finite_float(evaluator.total_score(), "total_score"),
         }
         self._last_evaluation = evaluation
         return evaluation
@@ -176,9 +179,13 @@ class AIBrain:
 
     def _record_cycle(self, result: Dict[str, Any]) -> None:
         if self.memory_manager is not None and callable(getattr(self.memory_manager, "store_memory", None)):
-            self.memory_manager.store_memory("AIBrain daily cycle completed.", self._serialize(result))
+            memory_result = self.memory_manager.store_memory("AIBrain daily cycle completed.", self._serialize(result))
+            if memory_result is not None and not isinstance(memory_result, dict):
+                raise ValueError("memory_manager.store_memory must return a dictionary or None.")
         if self.recommendation_engine is not None and callable(getattr(self.recommendation_engine, "record_cycle", None)):
-            self.recommendation_engine.record_cycle(result)
+            recommendation_result = self.recommendation_engine.record_cycle(result)
+            if recommendation_result is not None and not isinstance(recommendation_result, (dict, list)):
+                raise ValueError("recommendation_engine.record_cycle must return a dictionary, list, or None.")
 
     def _serialize(self, value: Any) -> Any:
         if is_dataclass(value):
@@ -192,3 +199,12 @@ class AIBrain:
     def _validate_day(self, day: Day) -> None:
         if not isinstance(day, Day):
             raise TypeError("AIBrain requires an existing Day instance.")
+
+    def _finite_float(self, value: Any, field_name: str) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{field_name} must be numeric.") from None
+        if not math.isfinite(number):
+            raise ValueError(f"{field_name} must be finite.")
+        return number
