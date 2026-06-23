@@ -10,4 +10,16 @@ Import directly from submodules:
     from backend.app.engines.scheduling_engine import SchedulingEngine
 """
 
-__all__ = []
+from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine  # noqa: F401
+from backend.app.engines.future_simulation_engine import FutureSimulationEngine  # noqa: F401
+from backend.app.engines.goal_intelligence_engine import GoalIntelligenceEngine  # noqa: F401
+from backend.app.engines.multi_objective_optimization_engine import MultiObjectiveOptimizationEngine  # noqa: F401
+from backend.app.engines.strategic_planning_engine import StrategicPlanningEngine  # noqa: F401
+
+__all__ = [
+    "DependencyIntelligenceEngine",
+    "FutureSimulationEngine",
+    "GoalIntelligenceEngine",
+    "MultiObjectiveOptimizationEngine",
+    "StrategicPlanningEngine",
+]

@@ -17,4 +17,20 @@ Import directly from submodules:
     from backend.app.domain.strategic_compression import compute_overload_index
 """
 
-__all__ = []
+from backend.app.domain.dependency_model import TaskDependency  # noqa: F401
+from backend.app.domain.goal_model import Goal, Milestone  # noqa: F401
+from backend.app.domain.multi_objective_model import OptimizationObjective, OptimizationResult  # noqa: F401
+from backend.app.domain.simulation_model import SimulationResult, SimulationScenario  # noqa: F401
+from backend.app.domain.strategic_plan_model import RoadmapItem, StrategicPlan  # noqa: F401
+
+__all__ = [
+    "Goal",
+    "Milestone",
+    "TaskDependency",
+    "RoadmapItem",
+    "StrategicPlan",
+    "SimulationScenario",
+    "SimulationResult",
+    "OptimizationObjective",
+    "OptimizationResult",
+]

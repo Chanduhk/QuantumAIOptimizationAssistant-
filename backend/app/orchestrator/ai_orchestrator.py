@@ -11,10 +11,15 @@ from backend.app.ai_rl import RLScheduler
 from backend.app.cognitive import CognitiveEngine
 from backend.app.context import ContextEngine
 from backend.app.engines.decision_engine import DecisionEngine
+from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine
+from backend.app.engines.future_simulation_engine import FutureSimulationEngine
+from backend.app.engines.goal_intelligence_engine import GoalIntelligenceEngine
 from backend.app.engines.learning_engine import LearningEngine
+from backend.app.engines.multi_objective_optimization_engine import MultiObjectiveOptimizationEngine
 from backend.app.engines.optimization_engine import OptimizationEngine
 from backend.app.engines.planning_engine import PlanningEngine
 from backend.app.engines.prediction_engine import PredictionEngine
+from backend.app.engines.strategic_planning_engine import StrategicPlanningEngine
 from backend.app.knowledge import AIKnowledgeGraph
 from backend.app.memory import VectorMemorySystem
 from backend.app.ml import FeatureStore
@@ -44,6 +49,20 @@ class AIOrchestrator:
         self.behavior_engine = BehaviorIntelligenceEngine(session=self.session)
         self.prediction_engine = PredictionEngine()
         self.decision_engine = DecisionEngine()
+        self.dependency_intelligence_engine = DependencyIntelligenceEngine()
+        self.goal_intelligence_engine = GoalIntelligenceEngine(
+            dependency_engine=self.dependency_intelligence_engine,
+        )
+        self.strategic_planning_engine = StrategicPlanningEngine(
+            goal_intelligence_engine=self.goal_intelligence_engine,
+            dependency_intelligence_engine=self.dependency_intelligence_engine,
+        )
+        self.future_simulation_engine = FutureSimulationEngine(
+            goal_intelligence_engine=self.goal_intelligence_engine,
+            dependency_intelligence_engine=self.dependency_intelligence_engine,
+            strategic_planning_engine=self.strategic_planning_engine,
+        )
+        self.multi_objective_optimization_engine = MultiObjectiveOptimizationEngine()
         self.planning_engine = PlanningEngine()
         self.optimization_engine = OptimizationEngine()
         self.learning_engine = LearningEngine()
@@ -71,6 +90,8 @@ class AIOrchestrator:
         self._validate_user_id(user_id)
         self._validate_days_back(days_back)
         normalized_tasks = self._normalize_tasks(tasks)
+        normalized_tasks = self._enrich_tasks_with_goals(normalized_tasks)
+        normalized_tasks = self._enrich_tasks_with_dependencies(normalized_tasks)
         behavior_patterns = self._load_behavior_patterns(user_id=user_id, days_back=days_back)
         self._validate_behavior_patterns(behavior_patterns)
         self._cache_features(user_id=user_id, behavior_patterns=behavior_patterns)
@@ -165,7 +186,7 @@ class AIOrchestrator:
         system_metrics = self.ai_monitor.report_system_metrics()
         self._validate_monitor_metrics(system_metrics)
 
-        return {
+        result = {
             "context": ai_context,
             "predicted_tasks": predicted_tasks,
             "recommended_task_order": recommended_task_order,
@@ -176,6 +197,16 @@ class AIOrchestrator:
             "learning_update": learning_update,
             "system_metrics": system_metrics,
         }
+        strategic_plan_summary = self._strategic_plan_summary()
+        if strategic_plan_summary is not None:
+            result["strategic_plan_summary"] = strategic_plan_summary
+        future_projection_summary = self._future_projection_summary()
+        if future_projection_summary is not None:
+            result["future_projection_summary"] = future_projection_summary
+        optimization_projection = self._multi_objective_optimization_summary()
+        if optimization_projection is not None:
+            result.update(optimization_projection)
+        return result
 
     def generate_daily_plan(
         self,
@@ -304,6 +335,9 @@ class AIOrchestrator:
             normalized_tasks.append(
                 {
                     "id": f"input-{index}",
+                    "original_task_id": task.get("id"),
+                    "goal_id": task.get("goal_id"),
+                    "depends_on_task_ids": task.get("depends_on_task_ids", task.get("dependencies", [])),
                     "user_id": None,
                     "title": title,
                     "task_type": task_type,
@@ -318,7 +352,94 @@ class AIOrchestrator:
                 }
             )
 
+        id_map = {
+            str(task["original_task_id"]): task["id"]
+            for task in normalized_tasks
+            if task.get("original_task_id") is not None
+        }
+        for task in normalized_tasks:
+            dependencies = task.get("depends_on_task_ids")
+            if isinstance(dependencies, list):
+                task["depends_on_task_ids"] = [
+                    id_map.get(str(dependency), dependency)
+                    for dependency in dependencies
+                ]
+            elif isinstance(dependencies, str):
+                task["depends_on_task_ids"] = [id_map.get(dependencies, dependencies)]
+
         return normalized_tasks
+
+    def _enrich_tasks_with_goals(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        goal_engine = getattr(self, "goal_intelligence_engine", None)
+        goal_graph = getattr(goal_engine, "goal_graph", None)
+        goals = getattr(goal_graph, "goals", None)
+        if goal_engine is None or not goals:
+            return tasks
+        enrich = getattr(goal_engine, "enrich_tasks_with_goal_alignment", None)
+        if not callable(enrich):
+            raise ValueError("goal_intelligence_engine must provide enrich_tasks_with_goal_alignment.")
+        enriched_tasks = enrich(tasks)
+        self._validate_task_list(enriched_tasks, "goal enriched tasks")
+        return enriched_tasks
+
+    def _enrich_tasks_with_dependencies(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        dependency_engine = getattr(self, "dependency_intelligence_engine", None)
+        dependency_graph = getattr(dependency_engine, "dependency_graph", None)
+        graph_has_edges = bool(getattr(dependency_graph, "dependencies", None))
+        task_has_dependencies = any(
+            bool(task.get("depends_on_task_ids") or task.get("dependencies"))
+            for task in tasks
+            if isinstance(task, dict)
+        )
+        if dependency_engine is None or not (graph_has_edges or task_has_dependencies):
+            return tasks
+        enrich = getattr(dependency_engine, "enrich_tasks_with_dependencies", None)
+        if not callable(enrich):
+            raise ValueError("dependency_intelligence_engine must provide enrich_tasks_with_dependencies.")
+        enriched_tasks = enrich(tasks)
+        self._validate_task_list(enriched_tasks, "dependency enriched tasks")
+        return enriched_tasks
+
+    def _strategic_plan_summary(self) -> Optional[Dict[str, Any]]:
+        strategic_engine = getattr(self, "strategic_planning_engine", None)
+        summarize = getattr(strategic_engine, "summarize_active_plans", None)
+        if not callable(summarize):
+            return None
+        summary = summarize()
+        if summary is None:
+            return None
+        if not isinstance(summary, dict):
+            raise ValueError("strategic_plan_summary must be a dictionary.")
+        self._validate_numeric_payload(summary, field_name="strategic_plan_summary")
+        return summary
+
+    def _future_projection_summary(self) -> Optional[Dict[str, Any]]:
+        simulation_engine = getattr(self, "future_simulation_engine", None)
+        summarize = getattr(simulation_engine, "summarize_future_projection", None)
+        if not callable(summarize):
+            return None
+        summary = summarize()
+        if summary is None:
+            return None
+        if not isinstance(summary, dict):
+            raise ValueError("future_projection_summary must be a dictionary.")
+        self._validate_numeric_payload(summary, field_name="future_projection_summary")
+        return summary
+
+    def _multi_objective_optimization_summary(self) -> Optional[Dict[str, Any]]:
+        optimization_engine = getattr(self, "multi_objective_optimization_engine", None)
+        summarize = getattr(optimization_engine, "summarize_latest_optimization", None)
+        if not callable(summarize):
+            return None
+        summary = summarize()
+        if summary is None:
+            return None
+        if not isinstance(summary, dict):
+            raise ValueError("multi_objective optimization summary must be a dictionary.")
+        if "selected_future" not in summary or "optimization_summary" not in summary:
+            raise ValueError("multi_objective optimization summary missing required fields.")
+        self._validate_numeric_payload(summary, field_name="multi_objective_optimization")
+        return summary
 
     def _load_behavior_patterns(self, *, user_id: int, days_back: Optional[int]) -> Dict[str, Any]:
         task_history = self.behavior_engine.collect_behavior_data(
