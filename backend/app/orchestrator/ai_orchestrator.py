@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 from backend.app.ai_rl import RLScheduler
 from backend.app.cognitive import CognitiveEngine
 from backend.app.context import ContextEngine
+from backend.app.engines.adaptive_life_operating_system import AdaptiveLifeOperatingSystem
 from backend.app.engines.decision_engine import DecisionEngine
 from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine
 from backend.app.engines.future_simulation_engine import FutureSimulationEngine
 from backend.app.engines.goal_intelligence_engine import GoalIntelligenceEngine
 from backend.app.engines.learning_engine import LearningEngine
+from backend.app.engines.meta_cognitive_engine import MetaCognitiveEngine
 from backend.app.engines.multi_objective_optimization_engine import MultiObjectiveOptimizationEngine
 from backend.app.engines.optimization_engine import OptimizationEngine
 from backend.app.engines.planning_engine import PlanningEngine
@@ -63,6 +65,8 @@ class AIOrchestrator:
             strategic_planning_engine=self.strategic_planning_engine,
         )
         self.multi_objective_optimization_engine = MultiObjectiveOptimizationEngine()
+        self.meta_cognitive_engine = MetaCognitiveEngine()
+        self.adaptive_life_operating_system = AdaptiveLifeOperatingSystem()
         self.planning_engine = PlanningEngine()
         self.optimization_engine = OptimizationEngine()
         self.learning_engine = LearningEngine()
@@ -206,6 +210,12 @@ class AIOrchestrator:
         optimization_projection = self._multi_objective_optimization_summary()
         if optimization_projection is not None:
             result.update(optimization_projection)
+        meta_cognitive_summary = self._meta_cognitive_summary()
+        if meta_cognitive_summary is not None:
+            result["meta_cognitive_summary"] = meta_cognitive_summary
+        adaptive_life_summary = self._adaptive_life_summary()
+        if adaptive_life_summary is not None:
+            result["adaptive_life_summary"] = adaptive_life_summary
         return result
 
     def generate_daily_plan(
@@ -439,6 +449,32 @@ class AIOrchestrator:
         if "selected_future" not in summary or "optimization_summary" not in summary:
             raise ValueError("multi_objective optimization summary missing required fields.")
         self._validate_numeric_payload(summary, field_name="multi_objective_optimization")
+        return summary
+
+    def _meta_cognitive_summary(self) -> Optional[Dict[str, Any]]:
+        meta_engine = getattr(self, "meta_cognitive_engine", None)
+        summarize = getattr(meta_engine, "summarize_meta_cognition", None)
+        if not callable(summarize):
+            return None
+        summary = summarize()
+        if summary is None:
+            return None
+        if not isinstance(summary, dict):
+            raise ValueError("meta_cognitive_summary must be a dictionary.")
+        self._validate_numeric_payload(summary, field_name="meta_cognitive_summary")
+        return summary
+
+    def _adaptive_life_summary(self) -> Optional[Dict[str, Any]]:
+        adaptive_os = getattr(self, "adaptive_life_operating_system", None)
+        summarize = getattr(adaptive_os, "summarize_adaptive_life", None)
+        if not callable(summarize):
+            return None
+        summary = summarize()
+        if summary is None:
+            return None
+        if not isinstance(summary, dict):
+            raise ValueError("adaptive_life_summary must be a dictionary.")
+        self._validate_numeric_payload(summary, field_name="adaptive_life_summary")
         return summary
 
     def _load_behavior_patterns(self, *, user_id: int, days_back: Optional[int]) -> Dict[str, Any]:
