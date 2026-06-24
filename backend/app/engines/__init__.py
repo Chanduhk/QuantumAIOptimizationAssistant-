@@ -11,6 +11,7 @@ Import directly from submodules:
 """
 
 from backend.app.engines.adaptive_life_operating_system import AdaptiveLifeOperatingSystem  # noqa: F401
+from backend.app.engines.conversational_intelligence_engine import ConversationalIntelligenceEngine  # noqa: F401
 from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine  # noqa: F401
 from backend.app.engines.future_simulation_engine import FutureSimulationEngine  # noqa: F401
 from backend.app.engines.goal_intelligence_engine import GoalIntelligenceEngine  # noqa: F401
@@ -20,6 +21,7 @@ from backend.app.engines.strategic_planning_engine import StrategicPlanningEngin
 
 __all__ = [
     "AdaptiveLifeOperatingSystem",
+    "ConversationalIntelligenceEngine",
     "DependencyIntelligenceEngine",
     "FutureSimulationEngine",
     "GoalIntelligenceEngine",

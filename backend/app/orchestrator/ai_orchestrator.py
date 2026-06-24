@@ -11,6 +11,7 @@ from backend.app.ai_rl import RLScheduler
 from backend.app.cognitive import CognitiveEngine
 from backend.app.context import ContextEngine
 from backend.app.engines.adaptive_life_operating_system import AdaptiveLifeOperatingSystem
+from backend.app.engines.conversational_intelligence_engine import ConversationalIntelligenceEngine
 from backend.app.engines.decision_engine import DecisionEngine
 from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine
 from backend.app.engines.future_simulation_engine import FutureSimulationEngine
@@ -67,6 +68,7 @@ class AIOrchestrator:
         self.multi_objective_optimization_engine = MultiObjectiveOptimizationEngine()
         self.meta_cognitive_engine = MetaCognitiveEngine()
         self.adaptive_life_operating_system = AdaptiveLifeOperatingSystem()
+        self.conversational_intelligence_engine = ConversationalIntelligenceEngine()
         self.planning_engine = PlanningEngine()
         self.optimization_engine = OptimizationEngine()
         self.learning_engine = LearningEngine()
@@ -216,6 +218,9 @@ class AIOrchestrator:
         adaptive_life_summary = self._adaptive_life_summary()
         if adaptive_life_summary is not None:
             result["adaptive_life_summary"] = adaptive_life_summary
+        conversational_outputs = self._conversational_intelligence_outputs()
+        if conversational_outputs is not None:
+            result.update(conversational_outputs)
         return result
 
     def generate_daily_plan(
@@ -476,6 +481,32 @@ class AIOrchestrator:
             raise ValueError("adaptive_life_summary must be a dictionary.")
         self._validate_numeric_payload(summary, field_name="adaptive_life_summary")
         return summary
+
+    def _conversational_intelligence_outputs(self) -> Optional[Dict[str, Any]]:
+        conversational_engine = getattr(self, "conversational_intelligence_engine", None)
+        summarize = getattr(conversational_engine, "summarize_conversational_intelligence", None)
+        if not callable(summarize):
+            return None
+        outputs = summarize()
+        if outputs is None:
+            return None
+        if not isinstance(outputs, dict):
+            raise ValueError("conversational intelligence outputs must be a dictionary.")
+        allowed_keys = {
+            "conversation_summary",
+            "decision_explanation",
+            "schedule_explanation",
+            "simulation_explanation",
+            "optimization_explanation",
+            "goal_explanation",
+            "risk_explanation",
+            "opportunity_explanation",
+        }
+        invalid_keys = set(outputs) - allowed_keys
+        if invalid_keys:
+            raise ValueError("conversational intelligence outputs contain unsupported fields.")
+        self._validate_numeric_payload(outputs, field_name="conversational_intelligence")
+        return outputs
 
     def _load_behavior_patterns(self, *, user_id: int, days_back: Optional[int]) -> Dict[str, Any]:
         task_history = self.behavior_engine.collect_behavior_data(

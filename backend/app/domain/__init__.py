@@ -23,6 +23,12 @@ from backend.app.domain.adaptive_life_model import (  # noqa: F401
     Opportunity,
     RiskAlert,
 )
+from backend.app.domain.conversation_model import (  # noqa: F401
+    ClarificationQuestion,
+    ConversationContext,
+    ConversationTurn,
+    ExplanationResult,
+)
 from backend.app.domain.dependency_model import TaskDependency  # noqa: F401
 from backend.app.domain.goal_model import Goal, Milestone  # noqa: F401
 from backend.app.domain.meta_cognitive_model import (  # noqa: F401
@@ -51,4 +57,8 @@ __all__ = [
     "Opportunity",
     "RiskAlert",
     "AdaptiveRecommendation",
+    "ConversationTurn",
+    "ConversationContext",
+    "ExplanationResult",
+    "ClarificationQuestion",
 ]
