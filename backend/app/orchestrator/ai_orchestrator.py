@@ -27,11 +27,13 @@ from backend.app.engines.optimization_engine import OptimizationEngine
 from backend.app.engines.personal_knowledge_engine import PersonalKnowledgeEngine
 from backend.app.engines.planning_engine import PlanningEngine
 from backend.app.engines.prediction_engine import PredictionEngine
+from backend.app.engines.scheduling_engine import SchedulingEngine
 from backend.app.engines.strategic_planning_engine import StrategicPlanningEngine
 from backend.app.knowledge import AIKnowledgeGraph
 from backend.app.memory import VectorMemorySystem
 from backend.app.ml import FeatureStore
 from backend.app.monitoring import AIMonitor
+from backend.app.orchestrator.executive_cognitive_brain import ExecutiveCognitiveBrain
 from backend.app.services.behavior_engine import BehaviorIntelligenceEngine
 
 
@@ -86,6 +88,7 @@ class AIOrchestrator:
             personal_knowledge_engine=self.personal_knowledge_engine,
         )
         self.planning_engine = PlanningEngine()
+        self.scheduling_engine = SchedulingEngine()
         self.optimization_engine = OptimizationEngine()
         self.learning_engine = LearningEngine()
         self.memory_system = VectorMemorySystem(storage_directory=self.memory_storage_directory)
@@ -98,6 +101,7 @@ class AIOrchestrator:
             behavior_engine=self.behavior_engine,
             knowledge_graph=self.knowledge_graph,
         )
+        self.executive_cognitive_brain = ExecutiveCognitiveBrain.from_orchestrator(self)
 
     def process_tasks(
         self,
@@ -252,6 +256,33 @@ class AIOrchestrator:
         decision_intelligence_outputs = self._decision_intelligence_outputs()
         if decision_intelligence_outputs is not None:
             result.update(decision_intelligence_outputs)
+        executive_brain_summary = self._executive_brain_summary()
+        if executive_brain_summary is not None:
+            result["executive_brain_summary"] = executive_brain_summary
+        return result
+
+    def execute_executive_planning(
+        self,
+        tasks: List[Dict[str, Any]],
+        user_id: int,
+        *,
+        query: Optional[str] = None,
+        behavior_patterns: Optional[Dict[str, Any]] = None,
+        goals: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Run the additive Executive Cognitive Brain path."""
+        self._validate_user_id(user_id)
+        normalized_tasks = self._normalize_tasks(tasks)
+        patterns = behavior_patterns if behavior_patterns is not None else self._load_behavior_patterns(user_id=user_id, days_back=None)
+        self._validate_behavior_patterns(patterns)
+        result = self.executive_cognitive_brain.execute_planning_request(
+            normalized_tasks,
+            user_id=user_id,
+            behavior_patterns=patterns,
+            goals=goals or [],
+            query=query,
+        )
+        self._validate_executive_brain_result(result)
         return result
 
     def generate_daily_plan(
@@ -669,6 +700,53 @@ class AIOrchestrator:
             raise ValueError("decision_summary must be a string.")
         self._validate_numeric_payload(outputs, field_name="decision_intelligence")
         return outputs
+
+    def _executive_brain_summary(self) -> Optional[Dict[str, Any]]:
+        executive_brain = getattr(self, "executive_cognitive_brain", None)
+        summarize = getattr(executive_brain, "summarize_executive_brain", None)
+        if not callable(summarize):
+            return None
+        summary = summarize()
+        if summary is None:
+            return None
+        if not isinstance(summary, dict):
+            raise ValueError("executive_brain_summary must be a dictionary.")
+        required_keys = {
+            "recommended_option_id",
+            "recommended_title",
+            "overall_score",
+            "risk_level",
+            "candidate_plan_count",
+            "future_count",
+        }
+        if set(summary) != required_keys:
+            raise ValueError("executive_brain_summary has invalid fields.")
+        self._validate_numeric_payload(summary, field_name="executive_brain_summary")
+        return summary
+
+    def _validate_executive_brain_result(self, result: Any) -> None:
+        if not isinstance(result, dict):
+            raise ValueError("executive brain result must be a dictionary.")
+        required_keys = {
+            "executive_context",
+            "executive_objectives",
+            "candidate_plans",
+            "recommended_plan",
+            "future_analysis",
+            "tradeoff_analysis",
+            "risk_summary",
+            "executive_summary",
+            "explanations",
+            "reflection",
+        }
+        if set(result) != required_keys:
+            raise ValueError("executive brain result has invalid fields.")
+        if not isinstance(result["executive_summary"], str) or not result["executive_summary"].strip():
+            raise ValueError("executive_summary must be a non-empty string.")
+        for key in required_keys - {"executive_summary"}:
+            if not isinstance(result[key], dict):
+                raise ValueError(f"{key} must be a dictionary.")
+        self._validate_numeric_payload(result, field_name="executive_brain")
 
     def _load_behavior_patterns(self, *, user_id: int, days_back: Optional[int]) -> Dict[str, Any]:
         task_history = self.behavior_engine.collect_behavior_data(
