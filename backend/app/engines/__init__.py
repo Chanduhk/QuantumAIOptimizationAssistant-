@@ -11,21 +11,31 @@ Import directly from submodules:
 """
 
 from backend.app.engines.adaptive_life_operating_system import AdaptiveLifeOperatingSystem  # noqa: F401
+from backend.app.engines.autonomous_planning_engine import AutonomousPlanningEngine  # noqa: F401
+from backend.app.engines.behavior_learning_engine import BehaviorLearningEngine  # noqa: F401
 from backend.app.engines.conversational_intelligence_engine import ConversationalIntelligenceEngine  # noqa: F401
+from backend.app.engines.context_awareness_engine import ContextAwarenessEngine  # noqa: F401
 from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine  # noqa: F401
+from backend.app.engines.decision_intelligence_engine import DecisionIntelligenceEngine  # noqa: F401
 from backend.app.engines.future_simulation_engine import FutureSimulationEngine  # noqa: F401
 from backend.app.engines.goal_intelligence_engine import GoalIntelligenceEngine  # noqa: F401
 from backend.app.engines.meta_cognitive_engine import MetaCognitiveEngine  # noqa: F401
 from backend.app.engines.multi_objective_optimization_engine import MultiObjectiveOptimizationEngine  # noqa: F401
+from backend.app.engines.personal_knowledge_engine import PersonalKnowledgeEngine  # noqa: F401
 from backend.app.engines.strategic_planning_engine import StrategicPlanningEngine  # noqa: F401
 
 __all__ = [
     "AdaptiveLifeOperatingSystem",
+    "AutonomousPlanningEngine",
+    "BehaviorLearningEngine",
     "ConversationalIntelligenceEngine",
+    "ContextAwarenessEngine",
     "DependencyIntelligenceEngine",
+    "DecisionIntelligenceEngine",
     "FutureSimulationEngine",
     "GoalIntelligenceEngine",
     "MetaCognitiveEngine",
     "MultiObjectiveOptimizationEngine",
+    "PersonalKnowledgeEngine",
     "StrategicPlanningEngine",
 ]

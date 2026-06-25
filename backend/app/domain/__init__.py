@@ -23,11 +23,40 @@ from backend.app.domain.adaptive_life_model import (  # noqa: F401
     Opportunity,
     RiskAlert,
 )
+from backend.app.domain.autonomous_planning_model import (  # noqa: F401
+    AutonomousPlan,
+    ContingencyPlan,
+    PlanMilestone,
+    PlanObjective,
+    PlanTask,
+    RecoveryPlan,
+)
+from backend.app.domain.behavior_learning_model import (  # noqa: F401
+    BehaviorInsight,
+    BehaviorObservation,
+    BehaviorPattern,
+    BehaviorTrend,
+    LearningSnapshot,
+)
 from backend.app.domain.conversation_model import (  # noqa: F401
     ClarificationQuestion,
     ConversationContext,
     ConversationTurn,
     ExplanationResult,
+)
+from backend.app.domain.context_awareness_model import (  # noqa: F401
+    ContextConflict,
+    ContextInsight,
+    ContextShift,
+    ContextSignal,
+    ContextSnapshot,
+)
+from backend.app.domain.decision_intelligence_model import (  # noqa: F401
+    DecisionAnalysis,
+    DecisionEvaluation,
+    DecisionOption,
+    DecisionRecommendation,
+    DecisionTradeoff,
 )
 from backend.app.domain.dependency_model import TaskDependency  # noqa: F401
 from backend.app.domain.goal_model import Goal, Milestone  # noqa: F401
@@ -37,6 +66,11 @@ from backend.app.domain.meta_cognitive_model import (  # noqa: F401
     StrategyRecommendation,
 )
 from backend.app.domain.multi_objective_model import OptimizationObjective, OptimizationResult  # noqa: F401
+from backend.app.domain.personal_knowledge_model import (  # noqa: F401
+    KnowledgeInsight,
+    KnowledgeNode,
+    KnowledgeRelationship,
+)
 from backend.app.domain.simulation_model import SimulationResult, SimulationScenario  # noqa: F401
 from backend.app.domain.strategic_plan_model import RoadmapItem, StrategicPlan  # noqa: F401
 
@@ -61,4 +95,28 @@ __all__ = [
     "ConversationContext",
     "ExplanationResult",
     "ClarificationQuestion",
+    "KnowledgeNode",
+    "KnowledgeRelationship",
+    "KnowledgeInsight",
+    "PlanObjective",
+    "PlanMilestone",
+    "PlanTask",
+    "RecoveryPlan",
+    "ContingencyPlan",
+    "AutonomousPlan",
+    "BehaviorObservation",
+    "BehaviorPattern",
+    "BehaviorTrend",
+    "BehaviorInsight",
+    "LearningSnapshot",
+    "ContextSignal",
+    "ContextSnapshot",
+    "ContextShift",
+    "ContextConflict",
+    "ContextInsight",
+    "DecisionOption",
+    "DecisionEvaluation",
+    "DecisionTradeoff",
+    "DecisionRecommendation",
+    "DecisionAnalysis",
 ]

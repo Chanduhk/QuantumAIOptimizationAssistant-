@@ -11,8 +11,12 @@ from backend.app.ai_rl import RLScheduler
 from backend.app.cognitive import CognitiveEngine
 from backend.app.context import ContextEngine
 from backend.app.engines.adaptive_life_operating_system import AdaptiveLifeOperatingSystem
+from backend.app.engines.autonomous_planning_engine import AutonomousPlanningEngine
+from backend.app.engines.behavior_learning_engine import BehaviorLearningEngine
 from backend.app.engines.conversational_intelligence_engine import ConversationalIntelligenceEngine
+from backend.app.engines.context_awareness_engine import ContextAwarenessEngine
 from backend.app.engines.decision_engine import DecisionEngine
+from backend.app.engines.decision_intelligence_engine import DecisionIntelligenceEngine
 from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine
 from backend.app.engines.future_simulation_engine import FutureSimulationEngine
 from backend.app.engines.goal_intelligence_engine import GoalIntelligenceEngine
@@ -20,6 +24,7 @@ from backend.app.engines.learning_engine import LearningEngine
 from backend.app.engines.meta_cognitive_engine import MetaCognitiveEngine
 from backend.app.engines.multi_objective_optimization_engine import MultiObjectiveOptimizationEngine
 from backend.app.engines.optimization_engine import OptimizationEngine
+from backend.app.engines.personal_knowledge_engine import PersonalKnowledgeEngine
 from backend.app.engines.planning_engine import PlanningEngine
 from backend.app.engines.prediction_engine import PredictionEngine
 from backend.app.engines.strategic_planning_engine import StrategicPlanningEngine
@@ -69,6 +74,17 @@ class AIOrchestrator:
         self.meta_cognitive_engine = MetaCognitiveEngine()
         self.adaptive_life_operating_system = AdaptiveLifeOperatingSystem()
         self.conversational_intelligence_engine = ConversationalIntelligenceEngine()
+        self.personal_knowledge_engine = PersonalKnowledgeEngine()
+        self.behavior_learning_engine = BehaviorLearningEngine()
+        self.context_awareness_engine = ContextAwarenessEngine()
+        self.decision_intelligence_engine = DecisionIntelligenceEngine()
+        self.autonomous_planning_engine = AutonomousPlanningEngine(
+            strategic_planning_engine=self.strategic_planning_engine,
+            goal_intelligence_engine=self.goal_intelligence_engine,
+            dependency_intelligence_engine=self.dependency_intelligence_engine,
+            future_simulation_engine=self.future_simulation_engine,
+            personal_knowledge_engine=self.personal_knowledge_engine,
+        )
         self.planning_engine = PlanningEngine()
         self.optimization_engine = OptimizationEngine()
         self.learning_engine = LearningEngine()
@@ -221,6 +237,21 @@ class AIOrchestrator:
         conversational_outputs = self._conversational_intelligence_outputs()
         if conversational_outputs is not None:
             result.update(conversational_outputs)
+        personal_knowledge_outputs = self._personal_knowledge_outputs()
+        if personal_knowledge_outputs is not None:
+            result.update(personal_knowledge_outputs)
+        autonomous_planning_outputs = self._autonomous_planning_outputs()
+        if autonomous_planning_outputs is not None:
+            result.update(autonomous_planning_outputs)
+        behavior_learning_outputs = self._behavior_learning_outputs()
+        if behavior_learning_outputs is not None:
+            result.update(behavior_learning_outputs)
+        context_awareness_outputs = self._context_awareness_outputs()
+        if context_awareness_outputs is not None:
+            result.update(context_awareness_outputs)
+        decision_intelligence_outputs = self._decision_intelligence_outputs()
+        if decision_intelligence_outputs is not None:
+            result.update(decision_intelligence_outputs)
         return result
 
     def generate_daily_plan(
@@ -506,6 +537,137 @@ class AIOrchestrator:
         if invalid_keys:
             raise ValueError("conversational intelligence outputs contain unsupported fields.")
         self._validate_numeric_payload(outputs, field_name="conversational_intelligence")
+        return outputs
+
+    def _personal_knowledge_outputs(self) -> Optional[Dict[str, Any]]:
+        personal_knowledge_engine = getattr(self, "personal_knowledge_engine", None)
+        summarize = getattr(personal_knowledge_engine, "summarize_personal_knowledge", None)
+        if not callable(summarize):
+            return None
+        outputs = summarize()
+        if outputs is None:
+            return None
+        if not isinstance(outputs, dict):
+            raise ValueError("personal knowledge outputs must be a dictionary.")
+        required_keys = {"knowledge_summary", "knowledge_insights", "knowledge_health"}
+        if set(outputs) != required_keys:
+            raise ValueError("personal knowledge outputs must contain knowledge_summary, knowledge_insights, and knowledge_health.")
+        if not isinstance(outputs["knowledge_summary"], dict):
+            raise ValueError("knowledge_summary must be a dictionary.")
+        if not isinstance(outputs["knowledge_insights"], list):
+            raise ValueError("knowledge_insights must be a list.")
+        if not isinstance(outputs["knowledge_health"], dict):
+            raise ValueError("knowledge_health must be a dictionary.")
+        self._validate_numeric_payload(outputs, field_name="personal_knowledge")
+        return outputs
+
+    def _autonomous_planning_outputs(self) -> Optional[Dict[str, Any]]:
+        autonomous_planning_engine = getattr(self, "autonomous_planning_engine", None)
+        summarize = getattr(autonomous_planning_engine, "summarize_autonomous_planning", None)
+        if not callable(summarize):
+            return None
+        outputs = summarize()
+        if outputs is None:
+            return None
+        if not isinstance(outputs, dict):
+            raise ValueError("autonomous planning outputs must be a dictionary.")
+        allowed_keys = {
+            "autonomous_plan_summary",
+            "next_best_action",
+            "recovery_plan_summary",
+            "contingency_plan_summary",
+        }
+        invalid_keys = set(outputs) - allowed_keys
+        if invalid_keys:
+            raise ValueError("autonomous planning outputs contain unsupported fields.")
+        self._validate_numeric_payload(outputs, field_name="autonomous_planning")
+        return outputs
+
+    def _behavior_learning_outputs(self) -> Optional[Dict[str, Any]]:
+        behavior_learning_engine = getattr(self, "behavior_learning_engine", None)
+        summarize = getattr(behavior_learning_engine, "summarize_behavior_learning", None)
+        if not callable(summarize):
+            return None
+        outputs = summarize()
+        if outputs is None:
+            return None
+        if not isinstance(outputs, dict):
+            raise ValueError("behavior learning outputs must be a dictionary.")
+        required_keys = {
+            "behavior_learning_summary",
+            "behavior_trends",
+            "behavior_insights",
+            "learning_snapshot",
+        }
+        if set(outputs) != required_keys:
+            raise ValueError("behavior learning outputs must contain behavior_learning_summary, behavior_trends, behavior_insights, and learning_snapshot.")
+        if not isinstance(outputs["behavior_learning_summary"], dict):
+            raise ValueError("behavior_learning_summary must be a dictionary.")
+        if not isinstance(outputs["behavior_trends"], list):
+            raise ValueError("behavior_trends must be a list.")
+        if not isinstance(outputs["behavior_insights"], list):
+            raise ValueError("behavior_insights must be a list.")
+        if not isinstance(outputs["learning_snapshot"], dict):
+            raise ValueError("learning_snapshot must be a dictionary.")
+        self._validate_numeric_payload(outputs, field_name="behavior_learning")
+        return outputs
+
+    def _context_awareness_outputs(self) -> Optional[Dict[str, Any]]:
+        context_awareness_engine = getattr(self, "context_awareness_engine", None)
+        summarize = getattr(context_awareness_engine, "summarize_context_awareness", None)
+        if not callable(summarize):
+            return None
+        outputs = summarize()
+        if outputs is None:
+            return None
+        if not isinstance(outputs, dict):
+            raise ValueError("context awareness outputs must be a dictionary.")
+        required_keys = {
+            "context_snapshot",
+            "context_shifts",
+            "context_conflicts",
+            "context_insights",
+            "context_summary",
+        }
+        if set(outputs) != required_keys:
+            raise ValueError("context awareness outputs must contain context_snapshot, context_shifts, context_conflicts, context_insights, and context_summary.")
+        if not isinstance(outputs["context_snapshot"], dict):
+            raise ValueError("context_snapshot must be a dictionary.")
+        for key in ("context_shifts", "context_conflicts", "context_insights"):
+            if not isinstance(outputs[key], list):
+                raise ValueError(f"{key} must be a list.")
+        if not isinstance(outputs["context_summary"], dict):
+            raise ValueError("context_summary must be a dictionary.")
+        self._validate_numeric_payload(outputs, field_name="context_awareness")
+        return outputs
+
+    def _decision_intelligence_outputs(self) -> Optional[Dict[str, Any]]:
+        decision_intelligence_engine = getattr(self, "decision_intelligence_engine", None)
+        summarize = getattr(decision_intelligence_engine, "summarize_decision_intelligence", None)
+        if not callable(summarize):
+            return None
+        outputs = summarize()
+        if outputs is None:
+            return None
+        if not isinstance(outputs, dict):
+            raise ValueError("decision intelligence outputs must be a dictionary.")
+        required_keys = {
+            "decision_analysis",
+            "decision_recommendation",
+            "decision_tradeoffs",
+            "decision_summary",
+        }
+        if set(outputs) != required_keys:
+            raise ValueError("decision intelligence outputs must contain decision_analysis, decision_recommendation, decision_tradeoffs, and decision_summary.")
+        if not isinstance(outputs["decision_analysis"], dict):
+            raise ValueError("decision_analysis must be a dictionary.")
+        if not isinstance(outputs["decision_recommendation"], list):
+            raise ValueError("decision_recommendation must be a list.")
+        if not isinstance(outputs["decision_tradeoffs"], list):
+            raise ValueError("decision_tradeoffs must be a list.")
+        if not isinstance(outputs["decision_summary"], str):
+            raise ValueError("decision_summary must be a string.")
+        self._validate_numeric_payload(outputs, field_name="decision_intelligence")
         return outputs
 
     def _load_behavior_patterns(self, *, user_id: int, days_back: Optional[int]) -> Dict[str, Any]:
