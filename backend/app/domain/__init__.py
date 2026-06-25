@@ -59,6 +59,12 @@ from backend.app.domain.decision_intelligence_model import (  # noqa: F401
     DecisionTradeoff,
 )
 from backend.app.domain.dependency_model import TaskDependency  # noqa: F401
+from backend.app.domain.executive_reasoning_model import (  # noqa: F401
+    Evidence,
+    EvidenceConflict,
+    ExecutiveRecommendation,
+    ExecutiveReasoningTrace,
+)
 from backend.app.domain.goal_model import Goal, Milestone  # noqa: F401
 from backend.app.domain.meta_cognitive_model import (  # noqa: F401
     PerformanceSummary,
@@ -119,4 +125,8 @@ __all__ = [
     "DecisionTradeoff",
     "DecisionRecommendation",
     "DecisionAnalysis",
+    "Evidence",
+    "EvidenceConflict",
+    "ExecutiveReasoningTrace",
+    "ExecutiveRecommendation",
 ]

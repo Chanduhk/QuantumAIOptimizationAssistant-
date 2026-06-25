@@ -4,6 +4,8 @@ import math
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, List
 
+from backend.app.orchestrator.executive_reasoning import ExecutiveReasoningEngine
+
 
 class ExecutiveCognitiveBrain:
     """High-level deterministic coordinator for existing intelligence engines.
@@ -23,6 +25,11 @@ class ExecutiveCognitiveBrain:
         "executive_summary",
         "explanations",
         "reflection",
+        "executive_reasoning",
+        "executive_confidence",
+        "executive_tradeoffs",
+        "executive_conflicts",
+        "executive_trace",
     }
 
     def __init__(
@@ -47,6 +54,7 @@ class ExecutiveCognitiveBrain:
         multi_objective_optimization_engine: Any | None = None,
         decision_intelligence_engine: Any | None = None,
         conversational_intelligence_engine: Any | None = None,
+        executive_reasoning_engine: ExecutiveReasoningEngine | None = None,
     ) -> None:
         self.context_engine = context_engine
         self.context_awareness_engine = context_awareness_engine
@@ -67,6 +75,7 @@ class ExecutiveCognitiveBrain:
         self.multi_objective_optimization_engine = multi_objective_optimization_engine
         self.decision_intelligence_engine = decision_intelligence_engine
         self.conversational_intelligence_engine = conversational_intelligence_engine
+        self.executive_reasoning_engine = executive_reasoning_engine or ExecutiveReasoningEngine()
         self.latest_result: Dict[str, Any] | None = None
 
     @classmethod
@@ -130,14 +139,27 @@ class ExecutiveCognitiveBrain:
         )
         tradeoff_analysis = self._tradeoff_analysis(recommended_plan)
         risk_summary = self._risk_summary(executive_context, future_analysis, recommended_plan)
+        reflection = self._reflect(executive_context, recommended_plan)
+        reasoning = self._run_executive_reasoning(
+            executive_context=executive_context,
+            executive_objectives=executive_objectives,
+            decision_state=decision_state,
+            candidate_plans=candidate_plans,
+            recommended_plan=recommended_plan,
+            future_analysis=future_analysis,
+            tradeoff_analysis=tradeoff_analysis,
+            risk_summary=risk_summary,
+            reflection=reflection,
+        )
+        recommended_plan = self._apply_reasoning_to_recommended_plan(recommended_plan, reasoning)
+        risk_summary = self._merge_reasoning_risk_summary(risk_summary, reasoning)
         explanations = self._explain_everything(
             recommended_plan,
             tradeoff_analysis,
             risk_summary,
             future_analysis,
         )
-        reflection = self._reflect(executive_context, recommended_plan)
-        executive_summary = self._executive_summary(recommended_plan, risk_summary, future_analysis)
+        executive_summary = self._executive_summary(recommended_plan, risk_summary, future_analysis, reasoning)
 
         result = {
             "executive_context": executive_context,
@@ -150,6 +172,11 @@ class ExecutiveCognitiveBrain:
             "executive_summary": executive_summary,
             "explanations": explanations,
             "reflection": reflection,
+            "executive_reasoning": reasoning,
+            "executive_confidence": {"confidence": reasoning["confidence"]},
+            "executive_tradeoffs": {"tradeoffs": reasoning["reasoning_trace"]["tradeoffs"]},
+            "executive_conflicts": {"conflicts": reasoning["reasoning_trace"]["conflicts_found"]},
+            "executive_trace": {"trace": reasoning["reasoning_trace"]},
         }
         self._validate_executive_result(result)
         self.latest_result = result
@@ -382,6 +409,79 @@ class ExecutiveCognitiveBrain:
             "risk_level": risk_state or self._risk_level(risk_score),
         }
 
+    def _run_executive_reasoning(
+        self,
+        *,
+        executive_context: Dict[str, Any],
+        executive_objectives: Dict[str, Any],
+        decision_state: Dict[str, Any],
+        candidate_plans: Dict[str, Any],
+        recommended_plan: Dict[str, Any],
+        future_analysis: Dict[str, Any],
+        tradeoff_analysis: Dict[str, Any],
+        risk_summary: Dict[str, Any],
+        reflection: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        recommendation = self.executive_reasoning_engine.reason(
+            executive_context=executive_context,
+            executive_objectives=executive_objectives,
+            decision_state=decision_state,
+            candidate_plans=candidate_plans,
+            recommended_plan=recommended_plan,
+            future_analysis=future_analysis,
+            tradeoff_analysis=tradeoff_analysis,
+            risk_summary=risk_summary,
+            reflection=reflection,
+        )
+        reasoning = self.executive_reasoning_engine.to_dict(recommendation)
+        self._require_dict(reasoning, "executive reasoning")
+        required = {
+            "recommended_action",
+            "confidence",
+            "executive_priority",
+            "why",
+            "expected_benefits",
+            "known_risks",
+            "alternatives",
+            "reasoning_trace",
+        }
+        if set(reasoning) != required:
+            raise ValueError("executive reasoning has invalid fields.")
+        trace = reasoning.get("reasoning_trace")
+        if not isinstance(trace, dict):
+            raise ValueError("executive reasoning trace must be a dictionary.")
+        for key in ("evidence_used", "conflicts_found", "reasoning_steps", "rejected_alternatives", "tradeoffs"):
+            if not isinstance(trace.get(key), list):
+                raise ValueError(f"executive reasoning trace {key} must be a list.")
+        return reasoning
+
+    def _apply_reasoning_to_recommended_plan(
+        self,
+        recommended_plan: Dict[str, Any],
+        reasoning: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        updated = dict(recommended_plan)
+        updated["executive_recommendation"] = reasoning["recommended_action"]
+        updated["executive_confidence"] = reasoning["confidence"]
+        updated["executive_reasoning"] = reasoning["why"]
+        return updated
+
+    def _merge_reasoning_risk_summary(
+        self,
+        risk_summary: Dict[str, Any],
+        reasoning: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged = dict(risk_summary)
+        trace = reasoning.get("reasoning_trace", {})
+        reasoning_risk = trace.get("risk_summary", {}) if isinstance(trace, dict) else {}
+        if isinstance(reasoning_risk, dict):
+            merged["executive_risk_score"] = reasoning_risk.get("risk_score", merged.get("risk_score", 0.0))
+            merged["executive_risk_level"] = reasoning_risk.get("risk_level", merged.get("risk_level", "unknown"))
+            merged["conflict_count"] = reasoning_risk.get("conflict_count", 0)
+        merged["executive_confidence"] = reasoning["confidence"]
+        self._require_dict(merged, "merged risk summary")
+        return merged
+
     def _explain_everything(
         self,
         recommended_plan: Dict[str, Any],
@@ -427,10 +527,11 @@ class ExecutiveCognitiveBrain:
         recommended_plan: Dict[str, Any],
         risk_summary: Dict[str, Any],
         future_analysis: Dict[str, Any],
+        reasoning: Dict[str, Any],
     ) -> str:
         summary = (
-            f"Executive recommendation: {recommended_plan.get('title')} "
-            f"(score {recommended_plan.get('overall_score')}, risk {risk_summary.get('risk_level')})."
+            f"Executive recommendation: {reasoning.get('recommended_action')} "
+            f"(confidence {reasoning.get('confidence')}%, risk {risk_summary.get('executive_risk_level', risk_summary.get('risk_level'))})."
         )
         if not isinstance(summary, str) or not summary.strip():
             raise ValueError("executive summary must be a non-empty string.")

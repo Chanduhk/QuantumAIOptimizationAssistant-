@@ -360,7 +360,7 @@ def test_executive_brain_executes_pipeline_in_order():
     assert result["recommended_plan"]["title"] == "Optimized Schedule"
     assert result["risk_summary"]["risk_level"] == "low"
     assert result["explanations"]["risk_explanation"]["title"] == "Risk explanation"
-    assert calls[:19] == [
+    assert calls[:18] == [
         "context",
         "behavior_learning",
         "adaptive",
@@ -379,8 +379,9 @@ def test_executive_brain_executes_pipeline_in_order():
         "simulation",
         "multi_objective",
         "decision_intelligence",
-        "conversational_risk",
     ]
+    assert "conversational_risk" in calls
+    assert calls.count("meta") >= 2
 
 
 def test_executive_brain_is_deterministic_for_identical_inputs():

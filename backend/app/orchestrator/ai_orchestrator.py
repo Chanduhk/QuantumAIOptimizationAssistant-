@@ -739,11 +739,21 @@ class AIOrchestrator:
             "explanations",
             "reflection",
         }
-        if set(result) != required_keys:
+        optional_keys = {
+            "executive_reasoning",
+            "executive_confidence",
+            "executive_tradeoffs",
+            "executive_conflicts",
+            "executive_trace",
+        }
+        if not required_keys <= set(result) or set(result) - required_keys - optional_keys:
             raise ValueError("executive brain result has invalid fields.")
         if not isinstance(result["executive_summary"], str) or not result["executive_summary"].strip():
             raise ValueError("executive_summary must be a non-empty string.")
         for key in required_keys - {"executive_summary"}:
+            if not isinstance(result[key], dict):
+                raise ValueError(f"{key} must be a dictionary.")
+        for key in optional_keys & set(result):
             if not isinstance(result[key], dict):
                 raise ValueError(f"{key} must be a dictionary.")
         self._validate_numeric_payload(result, field_name="executive_brain")
