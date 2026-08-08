@@ -4,4 +4,6 @@ Import directly from submodules:
     from backend.app.adaptive.adaptive_scheduler import AdaptiveScheduler
 """
 
-__all__ = []
+from backend.app.adaptive.adaptive_scheduler import AdaptiveScheduler  # noqa: F401
+
+__all__ = ["AdaptiveScheduler"]

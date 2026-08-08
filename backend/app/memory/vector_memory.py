@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import io
 from pathlib import Path
+from contextlib import redirect_stderr
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -11,11 +13,6 @@ try:
 except ImportError:  # pragma: no cover - runtime fallback
     faiss = None
 
-try:
-    from sentence_transformers import SentenceTransformer
-except ImportError:  # pragma: no cover - runtime fallback
-    SentenceTransformer = None  # type: ignore
-
 
 class VectorMemorySystem:
     """Semantic task memory using embeddings with FAISS-backed retrieval when available."""
@@ -23,7 +20,7 @@ class VectorMemorySystem:
     def __init__(
         self,
         storage_directory: Optional[str] = None,
-        model_name: str = "all-MiniLM-L6-v2",
+        model_name: Optional[str] = "all-MiniLM-L6-v2",
     ) -> None:
         self.storage_directory = Path(
             storage_directory
@@ -96,10 +93,13 @@ class VectorMemorySystem:
         }
 
     def _load_model(self) -> Optional[Any]:
-        if SentenceTransformer is None:
+        if not self.model_name:
             return None
         try:
-            return SentenceTransformer(self.model_name)
+            with redirect_stderr(io.StringIO()):
+                from sentence_transformers import SentenceTransformer
+
+                return SentenceTransformer(self.model_name)
         except Exception:
             return None
 

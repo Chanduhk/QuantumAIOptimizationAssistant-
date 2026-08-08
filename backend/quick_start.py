@@ -199,7 +199,7 @@ def quick_start_demo():
     print("=" * 80)
     print("\nNext steps:")
     print("1. Set up database (PostgreSQL or SQLite)")
-    print("2. Run: uvicorn main:app --reload")
+    print("2. Run from project root: python -m uvicorn backend.main:app --reload")
     print("3. Visit: http://localhost:8000/api/docs")
     print("4. Load your actual task data")
     print("5. Train model with real data: POST /api/v1/behavior/train")

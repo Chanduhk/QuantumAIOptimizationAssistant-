@@ -4,4 +4,6 @@ Import directly from submodules:
     from backend.app.ai_models.productivity_model import ProductivityModel
 """
 
-__all__ = []
+from backend.app.ai_models.productivity_model import ProductivityModel  # noqa: F401
+
+__all__ = ["ProductivityModel"]

@@ -4,7 +4,11 @@ import math
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, List
 
+from backend.app.orchestrator.executive_experience import ExecutiveExperience
+from backend.app.orchestrator.executive_execution import ExecutiveExecutionEngine
+from backend.app.orchestrator.executive_governance import ExecutiveGovernanceEngine
 from backend.app.orchestrator.executive_reasoning import ExecutiveReasoningEngine
+from backend.app.orchestrator.executive_resource import ExecutiveResourceEngine
 
 
 class ExecutiveCognitiveBrain:
@@ -30,6 +34,42 @@ class ExecutiveCognitiveBrain:
         "executive_tradeoffs",
         "executive_conflicts",
         "executive_trace",
+        "executive_experience",
+        "executive_learning_summary",
+        "executive_patterns",
+        "executive_strategy_profile",
+        "executive_confidence_calibration",
+        "executive_lessons",
+        "execution_state",
+        "execution_health",
+        "execution_dashboard",
+        "execution_alerts",
+        "execution_deviations",
+        "execution_recovery",
+        "execution_summary",
+        "execution_timeline",
+        "execution_confidence",
+        "next_execution_checkpoint",
+        "resource_state",
+        "resource_health",
+        "resource_dashboard",
+        "resource_conflicts",
+        "resource_recommendations",
+        "resource_summary",
+        "resource_forecast",
+        "resource_efficiency",
+        "resource_utilization",
+        "executive_resource_score",
+        "governance_state",
+        "governance_health",
+        "governance_dashboard",
+        "governance_summary",
+        "governance_recommendations",
+        "governance_audit",
+        "governance_confidence",
+        "governance_policy_compliance",
+        "governance_violations",
+        "executive_governance_score",
     }
 
     def __init__(
@@ -55,6 +95,10 @@ class ExecutiveCognitiveBrain:
         decision_intelligence_engine: Any | None = None,
         conversational_intelligence_engine: Any | None = None,
         executive_reasoning_engine: ExecutiveReasoningEngine | None = None,
+        executive_experience: ExecutiveExperience | None = None,
+        executive_execution_engine: ExecutiveExecutionEngine | None = None,
+        executive_resource_engine: ExecutiveResourceEngine | None = None,
+        executive_governance_engine: ExecutiveGovernanceEngine | None = None,
     ) -> None:
         self.context_engine = context_engine
         self.context_awareness_engine = context_awareness_engine
@@ -76,6 +120,10 @@ class ExecutiveCognitiveBrain:
         self.decision_intelligence_engine = decision_intelligence_engine
         self.conversational_intelligence_engine = conversational_intelligence_engine
         self.executive_reasoning_engine = executive_reasoning_engine or ExecutiveReasoningEngine()
+        self.executive_experience = executive_experience or ExecutiveExperience()
+        self.executive_execution_engine = executive_execution_engine or ExecutiveExecutionEngine()
+        self.executive_resource_engine = executive_resource_engine or ExecutiveResourceEngine()
+        self.executive_governance_engine = executive_governance_engine or ExecutiveGovernanceEngine()
         self.latest_result: Dict[str, Any] | None = None
 
     @classmethod
@@ -153,6 +201,34 @@ class ExecutiveCognitiveBrain:
         )
         recommended_plan = self._apply_reasoning_to_recommended_plan(recommended_plan, reasoning)
         risk_summary = self._merge_reasoning_risk_summary(risk_summary, reasoning)
+        experience_outputs = self._record_executive_experience(
+            executive_context=executive_context,
+            recommended_plan=recommended_plan,
+            risk_summary=risk_summary,
+            reasoning=reasoning,
+        )
+        execution_outputs = self._monitor_executive_execution(
+            executive_context=executive_context,
+            recommended_plan=recommended_plan,
+            risk_summary=risk_summary,
+            reasoning=reasoning,
+            experience_outputs=experience_outputs,
+        )
+        resource_outputs = self._supervise_executive_resources(
+            executive_context=executive_context,
+            reasoning=reasoning,
+            experience_outputs=experience_outputs,
+            execution_outputs=execution_outputs,
+        )
+        governance_outputs = self._evaluate_executive_governance(
+            executive_context=executive_context,
+            executive_objectives=executive_objectives,
+            recommended_plan=recommended_plan,
+            reasoning=reasoning,
+            experience_outputs=experience_outputs,
+            execution_outputs=execution_outputs,
+            resource_outputs=resource_outputs,
+        )
         explanations = self._explain_everything(
             recommended_plan,
             tradeoff_analysis,
@@ -177,6 +253,10 @@ class ExecutiveCognitiveBrain:
             "executive_tradeoffs": {"tradeoffs": reasoning["reasoning_trace"]["tradeoffs"]},
             "executive_conflicts": {"conflicts": reasoning["reasoning_trace"]["conflicts_found"]},
             "executive_trace": {"trace": reasoning["reasoning_trace"]},
+            **experience_outputs,
+            **execution_outputs,
+            **resource_outputs,
+            **governance_outputs,
         }
         self._validate_executive_result(result)
         self.latest_result = result
@@ -482,6 +562,174 @@ class ExecutiveCognitiveBrain:
         self._require_dict(merged, "merged risk summary")
         return merged
 
+    def _record_executive_experience(
+        self,
+        *,
+        executive_context: Dict[str, Any],
+        recommended_plan: Dict[str, Any],
+        risk_summary: Dict[str, Any],
+        reasoning: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        self.executive_experience.record_decision(
+            executive_context=executive_context,
+            reasoning=reasoning,
+            recommended_plan=recommended_plan,
+            risk_summary=risk_summary,
+        )
+        outputs = self.executive_experience.summarize_experience()
+        if outputs is None:
+            return {}
+        self._require_dict(outputs, "executive experience outputs")
+        required = {
+            "executive_experience",
+            "executive_learning_summary",
+            "executive_patterns",
+            "executive_strategy_profile",
+            "executive_confidence_calibration",
+            "executive_lessons",
+        }
+        if set(outputs) != required:
+            raise ValueError("executive experience outputs have invalid fields.")
+        for key in ("executive_experience", "executive_learning_summary", "executive_confidence_calibration"):
+            if not isinstance(outputs[key], dict):
+                raise ValueError(f"{key} must be a dictionary.")
+        for key in ("executive_patterns", "executive_strategy_profile", "executive_lessons"):
+            if not isinstance(outputs[key], list):
+                raise ValueError(f"{key} must be a list.")
+        return outputs
+
+    def _monitor_executive_execution(
+        self,
+        *,
+        executive_context: Dict[str, Any],
+        recommended_plan: Dict[str, Any],
+        risk_summary: Dict[str, Any],
+        reasoning: Dict[str, Any],
+        experience_outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        outputs = self.executive_execution_engine.track_execution_progress(
+            selected_strategy=str(reasoning.get("recommended_action") or recommended_plan.get("title") or "Unknown strategy"),
+            executive_context=executive_context,
+            executive_reasoning=reasoning,
+            risk_summary=risk_summary,
+            experience_summary=experience_outputs.get("executive_experience", {}),
+        )
+        self._require_dict(outputs, "executive execution outputs")
+        required = {
+            "execution_state",
+            "execution_health",
+            "execution_dashboard",
+            "execution_alerts",
+            "execution_deviations",
+            "execution_recovery",
+            "execution_summary",
+            "execution_timeline",
+            "execution_confidence",
+            "next_execution_checkpoint",
+        }
+        if set(outputs) != required:
+            raise ValueError("executive execution outputs have invalid fields.")
+        for key in (
+            "execution_state",
+            "execution_health",
+            "execution_dashboard",
+            "execution_summary",
+            "execution_timeline",
+            "execution_confidence",
+            "next_execution_checkpoint",
+        ):
+            if not isinstance(outputs[key], dict):
+                raise ValueError(f"{key} must be a dictionary.")
+        for key in ("execution_alerts", "execution_deviations", "execution_recovery"):
+            if not isinstance(outputs[key], list):
+                raise ValueError(f"{key} must be a list.")
+        return outputs
+
+    def _supervise_executive_resources(
+        self,
+        *,
+        executive_context: Dict[str, Any],
+        reasoning: Dict[str, Any],
+        experience_outputs: Dict[str, Any],
+        execution_outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        outputs = self.executive_resource_engine.generate_resource_summary(
+            executive_context=executive_context,
+            executive_reasoning=reasoning,
+            executive_experience=experience_outputs.get("executive_experience", {}),
+            execution_outputs=execution_outputs,
+            adaptive_life=executive_context.get("adaptive_life") or {},
+            behavior_learning=executive_context.get("behavior_learning") or {},
+            context_awareness=executive_context.get("context_snapshot") or {},
+        )
+        self._require_dict(outputs, "executive resource outputs")
+        required = {
+            "resource_state",
+            "resource_health",
+            "resource_dashboard",
+            "resource_conflicts",
+            "resource_recommendations",
+            "resource_summary",
+            "resource_forecast",
+            "resource_efficiency",
+            "resource_utilization",
+            "executive_resource_score",
+        }
+        if set(outputs) != required:
+            raise ValueError("executive resource outputs have invalid fields.")
+        for key in required - {"resource_conflicts", "resource_recommendations"}:
+            if not isinstance(outputs[key], dict):
+                raise ValueError(f"{key} must be a dictionary.")
+        for key in ("resource_conflicts", "resource_recommendations"):
+            if not isinstance(outputs[key], list):
+                raise ValueError(f"{key} must be a list.")
+        return outputs
+
+    def _evaluate_executive_governance(
+        self,
+        *,
+        executive_context: Dict[str, Any],
+        executive_objectives: Dict[str, Any],
+        recommended_plan: Dict[str, Any],
+        reasoning: Dict[str, Any],
+        experience_outputs: Dict[str, Any],
+        execution_outputs: Dict[str, Any],
+        resource_outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        outputs = self.executive_governance_engine.generate_governance_summary(
+            executive_reasoning=reasoning,
+            executive_experience=experience_outputs.get("executive_experience", {}),
+            execution_outputs=execution_outputs,
+            resource_outputs=resource_outputs,
+            adaptive_life=executive_context.get("adaptive_life") or {},
+            meta_cognitive=executive_context.get("meta_cognitive") or {},
+            decision_intelligence=recommended_plan.get("decision_analysis") or {},
+            goal_intelligence=executive_objectives.get("goal_state") if isinstance(executive_objectives.get("goal_state"), dict) else {},
+            context_awareness=executive_context.get("context_snapshot") or {},
+        )
+        self._require_dict(outputs, "executive governance outputs")
+        required = {
+            "governance_state",
+            "governance_health",
+            "governance_dashboard",
+            "governance_summary",
+            "governance_recommendations",
+            "governance_audit",
+            "governance_confidence",
+            "governance_policy_compliance",
+            "governance_violations",
+            "executive_governance_score",
+        }
+        if set(outputs) != required:
+            raise ValueError("executive governance outputs have invalid fields.")
+        for key in required - {"governance_recommendations", "governance_violations"}:
+            if not isinstance(outputs[key], dict):
+                raise ValueError(f"{key} must be a dictionary.")
+        for key in ("governance_recommendations", "governance_violations"):
+            if not isinstance(outputs[key], list):
+                raise ValueError(f"{key} must be a list.")
+        return outputs
+
     def _explain_everything(
         self,
         recommended_plan: Dict[str, Any],
@@ -601,7 +849,21 @@ class ExecutiveCognitiveBrain:
         if set(result) != self.OUTPUT_KEYS:
             raise ValueError("executive brain result has invalid output keys.")
         for key in self.OUTPUT_KEYS - {"executive_summary"}:
-            if not isinstance(result[key], dict):
+            if key in {
+                "executive_patterns",
+                "executive_strategy_profile",
+                "executive_lessons",
+                "execution_alerts",
+                "execution_deviations",
+                "execution_recovery",
+                "resource_conflicts",
+                "resource_recommendations",
+                "governance_recommendations",
+                "governance_violations",
+            }:
+                if not isinstance(result[key], list):
+                    raise ValueError(f"{key} must be a list.")
+            elif not isinstance(result[key], dict):
                 raise ValueError(f"{key} must be a dictionary.")
         if not isinstance(result["executive_summary"], str) or not result["executive_summary"].strip():
             raise ValueError("executive_summary must be a non-empty string.")

@@ -4,4 +4,6 @@ Import directly from submodules:
     from backend.app.learning.autonomous_learning import AutonomousLearningLoop
 """
 
-__all__ = []
+from backend.app.learning.autonomous_learning import AutonomousLearningLoop  # noqa: F401
+
+__all__ = ["AutonomousLearningLoop"]

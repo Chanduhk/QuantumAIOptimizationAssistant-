@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.ai_rl import RLScheduler
 from backend.app.cognitive import CognitiveEngine
-from backend.app.context import ContextEngine
 from backend.app.engines.adaptive_life_operating_system import AdaptiveLifeOperatingSystem
 from backend.app.engines.autonomous_planning_engine import AutonomousPlanningEngine
 from backend.app.engines.behavior_learning_engine import BehaviorLearningEngine
@@ -30,7 +29,6 @@ from backend.app.engines.prediction_engine import PredictionEngine
 from backend.app.engines.scheduling_engine import SchedulingEngine
 from backend.app.engines.strategic_planning_engine import StrategicPlanningEngine
 from backend.app.knowledge import AIKnowledgeGraph
-from backend.app.memory import VectorMemorySystem
 from backend.app.ml import FeatureStore
 from backend.app.monitoring import AIMonitor
 from backend.app.orchestrator.executive_cognitive_brain import ExecutiveCognitiveBrain
@@ -91,7 +89,13 @@ class AIOrchestrator:
         self.scheduling_engine = SchedulingEngine()
         self.optimization_engine = OptimizationEngine()
         self.learning_engine = LearningEngine()
-        self.memory_system = VectorMemorySystem(storage_directory=self.memory_storage_directory)
+        from backend.app.context import ContextEngine
+        from backend.app.memory import VectorMemorySystem
+
+        self.memory_system = VectorMemorySystem(
+            storage_directory=self.memory_storage_directory,
+            model_name=None,
+        )
         self.context_engine = ContextEngine(memory_system=self.memory_system)
         self.rl_scheduler = RLScheduler(policy_path=self.rl_policy_path)
         self.feature_store = FeatureStore()
@@ -745,6 +749,42 @@ class AIOrchestrator:
             "executive_tradeoffs",
             "executive_conflicts",
             "executive_trace",
+            "executive_experience",
+            "executive_learning_summary",
+            "executive_patterns",
+            "executive_strategy_profile",
+            "executive_confidence_calibration",
+            "executive_lessons",
+            "execution_state",
+            "execution_health",
+            "execution_dashboard",
+            "execution_alerts",
+            "execution_deviations",
+            "execution_recovery",
+            "execution_summary",
+            "execution_timeline",
+            "execution_confidence",
+            "next_execution_checkpoint",
+            "resource_state",
+            "resource_health",
+            "resource_dashboard",
+            "resource_conflicts",
+            "resource_recommendations",
+            "resource_summary",
+            "resource_forecast",
+            "resource_efficiency",
+            "resource_utilization",
+            "executive_resource_score",
+            "governance_state",
+            "governance_health",
+            "governance_dashboard",
+            "governance_summary",
+            "governance_recommendations",
+            "governance_audit",
+            "governance_confidence",
+            "governance_policy_compliance",
+            "governance_violations",
+            "executive_governance_score",
         }
         if not required_keys <= set(result) or set(result) - required_keys - optional_keys:
             raise ValueError("executive brain result has invalid fields.")
@@ -754,7 +794,21 @@ class AIOrchestrator:
             if not isinstance(result[key], dict):
                 raise ValueError(f"{key} must be a dictionary.")
         for key in optional_keys & set(result):
-            if not isinstance(result[key], dict):
+            if key in {
+                "executive_patterns",
+                "executive_strategy_profile",
+                "executive_lessons",
+                "execution_alerts",
+                "execution_deviations",
+                "execution_recovery",
+                "resource_conflicts",
+                "resource_recommendations",
+                "governance_recommendations",
+                "governance_violations",
+            }:
+                if not isinstance(result[key], list):
+                    raise ValueError(f"{key} must be a list.")
+            elif not isinstance(result[key], dict):
                 raise ValueError(f"{key} must be a dictionary.")
         self._validate_numeric_payload(result, field_name="executive_brain")
 

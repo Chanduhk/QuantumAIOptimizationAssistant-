@@ -47,8 +47,8 @@ test = [
     "pytest-asyncio>=0.21.0",
 ]
 
-[tool.setuptools]
-packages = ["backend"]
+[tool.setuptools.packages.find]
+include = ["backend*"]
 
 [tool.black]
 line-length = 100

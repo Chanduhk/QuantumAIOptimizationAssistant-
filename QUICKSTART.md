@@ -186,10 +186,6 @@ __all__ = []
 ## Running FastAPI for Development
 
 ```bash
-cd backend
-uvicorn main:app --reload
-
-# Or from project root
 cd /path/to/quantum_life_ai
 python -m uvicorn backend.main:app --reload
 ```

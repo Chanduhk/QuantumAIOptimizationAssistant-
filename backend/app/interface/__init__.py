@@ -4,4 +4,6 @@ Import directly from submodules:
     from backend.app.interface.ai_interaction import AIInteractionLayer
 """
 
-__all__ = []
+from backend.app.interface.ai_interaction import AIInteractionLayer  # noqa: F401
+
+__all__ = ["AIInteractionLayer"]

@@ -325,10 +325,6 @@ ptw tests/
 ```bash
 # From project root
 python -m uvicorn backend.main:app --reload
-
-# Or
-cd backend
-uvicorn main:app --reload
 ```
 
 ### For Docker

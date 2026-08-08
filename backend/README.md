@@ -335,10 +335,10 @@ async def get_report(user_id: int, db: Session = Depends(get_db)):
 
 ```bash
 # Development
-uvicorn main:app --reload
+python -m uvicorn backend.main:app --reload
 
 # Production
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker backend.main:app
 ```
 
 ## Output Examples

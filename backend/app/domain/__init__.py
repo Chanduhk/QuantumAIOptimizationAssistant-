@@ -51,6 +51,7 @@ from backend.app.domain.context_awareness_model import (  # noqa: F401
     ContextSignal,
     ContextSnapshot,
 )
+from backend.app.domain.day_model import Day  # noqa: F401
 from backend.app.domain.decision_intelligence_model import (  # noqa: F401
     DecisionAnalysis,
     DecisionEvaluation,
@@ -59,11 +60,45 @@ from backend.app.domain.decision_intelligence_model import (  # noqa: F401
     DecisionTradeoff,
 )
 from backend.app.domain.dependency_model import TaskDependency  # noqa: F401
+from backend.app.domain.evaluation import DayEvaluator  # noqa: F401
+from backend.app.domain.executive_experience_model import (  # noqa: F401
+    ExecutiveDecisionRecord,
+    ExecutiveLearningSnapshot,
+    ExecutivePattern,
+    ExecutiveStrategyProfile,
+)
+from backend.app.domain.executive_execution_model import (  # noqa: F401
+    ExecutionCheckpoint,
+    ExecutionDeviation,
+    ExecutionTimeline,
+    ExecutiveAlert,
+    PlanExecutionState,
+    RecoveryRecommendation,
+)
+from backend.app.domain.executive_governance_model import (  # noqa: F401
+    ExecutiveGovernanceSummary,
+    ExecutivePolicy,
+    GovernanceAudit,
+    GovernanceDecision,
+    GovernanceRecommendation,
+    GovernanceRule,
+    GovernanceViolation,
+)
 from backend.app.domain.executive_reasoning_model import (  # noqa: F401
     Evidence,
     EvidenceConflict,
     ExecutiveRecommendation,
     ExecutiveReasoningTrace,
+)
+from backend.app.domain.executive_resource_model import (  # noqa: F401
+    AttentionAllocation,
+    CapacityForecast,
+    EnergyProfile,
+    ExecutiveResourceSummary,
+    ResourceAllocation,
+    ResourceConflict,
+    ResourceRecommendation,
+    ResourceState,
 )
 from backend.app.domain.goal_model import Goal, Milestone  # noqa: F401
 from backend.app.domain.meta_cognitive_model import (  # noqa: F401
@@ -78,9 +113,19 @@ from backend.app.domain.personal_knowledge_model import (  # noqa: F401
     KnowledgeRelationship,
 )
 from backend.app.domain.simulation_model import SimulationResult, SimulationScenario  # noqa: F401
+from backend.app.domain.strategic_compression import (  # noqa: F401
+    apply_strategic_compression,
+    compute_overload_index,
+    compute_strategic_weight,
+)
 from backend.app.domain.strategic_plan_model import RoadmapItem, StrategicPlan  # noqa: F401
 
 __all__ = [
+    "Day",
+    "DayEvaluator",
+    "compute_overload_index",
+    "compute_strategic_weight",
+    "apply_strategic_compression",
     "Goal",
     "Milestone",
     "TaskDependency",
@@ -129,4 +174,29 @@ __all__ = [
     "EvidenceConflict",
     "ExecutiveReasoningTrace",
     "ExecutiveRecommendation",
+    "ExecutiveDecisionRecord",
+    "ExecutivePattern",
+    "ExecutiveLearningSnapshot",
+    "ExecutiveStrategyProfile",
+    "ExecutionCheckpoint",
+    "PlanExecutionState",
+    "ExecutionDeviation",
+    "ExecutiveAlert",
+    "RecoveryRecommendation",
+    "ExecutionTimeline",
+    "ExecutivePolicy",
+    "GovernanceRule",
+    "GovernanceViolation",
+    "GovernanceDecision",
+    "GovernanceRecommendation",
+    "GovernanceAudit",
+    "ExecutiveGovernanceSummary",
+    "ResourceState",
+    "ResourceAllocation",
+    "ResourceConflict",
+    "AttentionAllocation",
+    "EnergyProfile",
+    "CapacityForecast",
+    "ResourceRecommendation",
+    "ExecutiveResourceSummary",
 ]

@@ -9,5 +9,6 @@ Or use convenience imports:
 """
 
 from backend.app.ml.feature_store import FeatureStore  # noqa: F401
+from backend.app.ml.model_registry import ModelRegistry  # noqa: F401
 
-__all__ = ["FeatureStore"]
+__all__ = ["FeatureStore", "ModelRegistry"]

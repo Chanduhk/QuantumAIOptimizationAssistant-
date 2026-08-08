@@ -203,10 +203,10 @@ cp .env.example .env
 ### Step 4: Run API Server
 ```bash
 # Development
-uvicorn main:app --reload
+python -m uvicorn backend.main:app --reload
 
 # Production
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker backend.main:app
 ```
 
 API docs: `http://localhost:8000/api/docs`
@@ -448,7 +448,7 @@ score = engine.predict_task_productivity(9, 'coding', 60)
 1. ✅ Run `python quick_start.py` to see demo
 2. ✅ Read README.md for full documentation
 3. ✅ Set up database in .env file
-4. ✅ Start FastAPI server with `uvicorn main:app --reload`
+4. ✅ Start FastAPI server with `python -m uvicorn backend.main:app --reload`
 5. ✅ Test API endpoints via Swagger UI
 
 ### Short Term (1-2 days)

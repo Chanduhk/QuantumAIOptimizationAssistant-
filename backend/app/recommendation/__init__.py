@@ -4,4 +4,6 @@ Import directly from submodules:
     from backend.app.recommendation.recommendation_engine import RecommendationEngine
 """
 
-__all__ = []
+from backend.app.recommendation.recommendation_engine import RecommendationEngine  # noqa: F401
+
+__all__ = ["RecommendationEngine"]
