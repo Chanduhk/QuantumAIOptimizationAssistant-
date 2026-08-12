@@ -785,6 +785,14 @@ class AIOrchestrator:
             "governance_policy_compliance",
             "governance_violations",
             "executive_governance_score",
+            "executive_quantum_summary",
+            "executive_quantum_evidence",
+            "executive_quantum_risk",
+            "executive_quantum_tradeoffs",
+            "executive_quantum_reasoning",
+            "executive_quantum_recommendation",
+            "executive_quantum_confidence",
+            "executive_quantum_gap",
         }
         if not required_keys <= set(result) or set(result) - required_keys - optional_keys:
             raise ValueError("executive brain result has invalid fields.")

@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from backend.app.orchestrator.executive_experience import ExecutiveExperience
 from backend.app.orchestrator.executive_execution import ExecutiveExecutionEngine
 from backend.app.orchestrator.executive_governance import ExecutiveGovernanceEngine
+from backend.app.orchestrator.executive_quantum_integration import ExecutiveQuantumIntegration
 from backend.app.orchestrator.executive_reasoning import ExecutiveReasoningEngine
 from backend.app.orchestrator.executive_resource import ExecutiveResourceEngine
 
@@ -71,6 +72,16 @@ class ExecutiveCognitiveBrain:
         "governance_violations",
         "executive_governance_score",
     }
+    QUANTUM_OUTPUT_KEYS = {
+        "executive_quantum_summary",
+        "executive_quantum_evidence",
+        "executive_quantum_risk",
+        "executive_quantum_tradeoffs",
+        "executive_quantum_reasoning",
+        "executive_quantum_recommendation",
+        "executive_quantum_confidence",
+        "executive_quantum_gap",
+    }
 
     def __init__(
         self,
@@ -99,6 +110,7 @@ class ExecutiveCognitiveBrain:
         executive_execution_engine: ExecutiveExecutionEngine | None = None,
         executive_resource_engine: ExecutiveResourceEngine | None = None,
         executive_governance_engine: ExecutiveGovernanceEngine | None = None,
+        executive_quantum_integration: ExecutiveQuantumIntegration | None = None,
     ) -> None:
         self.context_engine = context_engine
         self.context_awareness_engine = context_awareness_engine
@@ -124,6 +136,7 @@ class ExecutiveCognitiveBrain:
         self.executive_execution_engine = executive_execution_engine or ExecutiveExecutionEngine()
         self.executive_resource_engine = executive_resource_engine or ExecutiveResourceEngine()
         self.executive_governance_engine = executive_governance_engine or ExecutiveGovernanceEngine()
+        self.executive_quantum_integration = executive_quantum_integration or ExecutiveQuantumIntegration()
         self.latest_result: Dict[str, Any] | None = None
 
     @classmethod
@@ -159,6 +172,7 @@ class ExecutiveCognitiveBrain:
         behavior_patterns: Dict[str, Any] | None = None,
         goals: List[Dict[str, Any]] | None = None,
         query: str | None = None,
+        quantum_result: Any | None = None,
     ) -> Dict[str, Any]:
         """Execute the executive coordination pipeline and return one result object."""
         task_list = self._task_list(tasks)
@@ -188,6 +202,16 @@ class ExecutiveCognitiveBrain:
         tradeoff_analysis = self._tradeoff_analysis(recommended_plan)
         risk_summary = self._risk_summary(executive_context, future_analysis, recommended_plan)
         reflection = self._reflect(executive_context, recommended_plan)
+        quantum_outputs: Dict[str, Any] = {}
+        quantum_reasoning_evidence = None
+        if quantum_result is not None:
+            quantum_evidence = self.executive_quantum_integration.adapt(quantum_result)
+            quantum_reasoning_evidence = self.executive_quantum_integration.to_reasoning_evidence(quantum_evidence)
+            quantum_outputs = self.executive_quantum_integration.outputs(quantum_evidence)
+            executive_context = dict(executive_context)
+            executive_context["quantum_evidence"] = quantum_outputs["executive_quantum_evidence"]
+            tradeoff_analysis = self._merge_quantum_tradeoffs(tradeoff_analysis, quantum_outputs)
+            risk_summary = self._merge_quantum_risk_summary(risk_summary, quantum_outputs)
         reasoning = self._run_executive_reasoning(
             executive_context=executive_context,
             executive_objectives=executive_objectives,
@@ -198,6 +222,7 @@ class ExecutiveCognitiveBrain:
             tradeoff_analysis=tradeoff_analysis,
             risk_summary=risk_summary,
             reflection=reflection,
+            quantum_evidence=quantum_reasoning_evidence,
         )
         recommended_plan = self._apply_reasoning_to_recommended_plan(recommended_plan, reasoning)
         risk_summary = self._merge_reasoning_risk_summary(risk_summary, reasoning)
@@ -257,6 +282,7 @@ class ExecutiveCognitiveBrain:
             **execution_outputs,
             **resource_outputs,
             **governance_outputs,
+            **quantum_outputs,
         }
         self._validate_executive_result(result)
         self.latest_result = result
@@ -501,6 +527,7 @@ class ExecutiveCognitiveBrain:
         tradeoff_analysis: Dict[str, Any],
         risk_summary: Dict[str, Any],
         reflection: Dict[str, Any],
+        quantum_evidence: Any | None = None,
     ) -> Dict[str, Any]:
         recommendation = self.executive_reasoning_engine.reason(
             executive_context=executive_context,
@@ -512,6 +539,7 @@ class ExecutiveCognitiveBrain:
             tradeoff_analysis=tradeoff_analysis,
             risk_summary=risk_summary,
             reflection=reflection,
+            extra_evidence=[] if quantum_evidence is None else [quantum_evidence],
         )
         reasoning = self.executive_reasoning_engine.to_dict(recommendation)
         self._require_dict(reasoning, "executive reasoning")
@@ -534,6 +562,39 @@ class ExecutiveCognitiveBrain:
             if not isinstance(trace.get(key), list):
                 raise ValueError(f"executive reasoning trace {key} must be a list.")
         return reasoning
+
+    def _merge_quantum_tradeoffs(
+        self,
+        tradeoff_analysis: Dict[str, Any],
+        quantum_outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged = dict(tradeoff_analysis)
+        tradeoffs = list(merged.get("tradeoffs", []))
+        quantum_tradeoffs = quantum_outputs.get("executive_quantum_tradeoffs", {})
+        if isinstance(quantum_tradeoffs, dict):
+            tradeoffs.extend(quantum_tradeoffs.get("tradeoffs", []))
+        merged["tradeoffs"] = sorted(dict.fromkeys(str(item) for item in tradeoffs))
+        merged["tradeoff_count"] = len(merged["tradeoffs"])
+        merged["quantum_tradeoff_count"] = len(quantum_tradeoffs.get("tradeoffs", [])) if isinstance(quantum_tradeoffs, dict) else 0
+        self._require_dict(merged, "quantum tradeoff analysis")
+        return merged
+
+    def _merge_quantum_risk_summary(
+        self,
+        risk_summary: Dict[str, Any],
+        quantum_outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged = dict(risk_summary)
+        quantum_risk = quantum_outputs.get("executive_quantum_risk", {})
+        if isinstance(quantum_risk, dict):
+            level = str(quantum_risk.get("risk_level", "low")).lower()
+            quantum_score = {"low": 10.0, "medium": 35.0, "high": 65.0, "critical": 85.0}.get(level, 25.0)
+            merged["risk_score"] = round(max(self._safe_float(merged.get("risk_score"), 0.0), quantum_score), 2)
+            merged["risk_level"] = self._risk_level(merged["risk_score"])
+            merged["quantum_risk_level"] = level
+            merged["quantum_warning_count"] = len(quantum_risk.get("warnings", [])) if isinstance(quantum_risk.get("warnings", []), list) else 0
+        self._require_dict(merged, "quantum risk summary")
+        return merged
 
     def _apply_reasoning_to_recommended_plan(
         self,
@@ -846,9 +907,10 @@ class ExecutiveCognitiveBrain:
         }
 
     def _validate_executive_result(self, result: Dict[str, Any]) -> None:
-        if set(result) != self.OUTPUT_KEYS:
+        keys = set(result)
+        if not self.OUTPUT_KEYS <= keys or keys - self.OUTPUT_KEYS - self.QUANTUM_OUTPUT_KEYS:
             raise ValueError("executive brain result has invalid output keys.")
-        for key in self.OUTPUT_KEYS - {"executive_summary"}:
+        for key in keys - {"executive_summary"}:
             if key in {
                 "executive_patterns",
                 "executive_strategy_profile",
