@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* 
+      HELIOX AURORA (Light Theme)
+      Luminous, clean, premium, precise.
+    */
+    --background: 210 20% 98%;
+    
+    /* Surfaces */
+    --surface-1: 0 0% 100%;
+    --surface-2: 210 16% 96%;
+    --surface-3: 210 14% 92%;
+    
+    /* Borders */
+    --border: 214 32% 91%;
+    --border-subtle: 214 32% 95%;
+    
+    /* Typography */
+    --content-primary: 222 47% 11%;
+    --content-secondary: 215 16% 47%;
+    --content-tertiary: 215 16% 65%;
+    --content-muted: 215 16% 75%;
+    
+    /* Accents */
+    --primary: 221 83% 53%; 
+    --primary-hover: 221 83% 48%;
+    --primary-foreground: 210 40% 98%;
+    
+    /* Quantum */
+    --quantum: 262 83% 58%;
+    --quantum-foreground: 210 40% 98%;
+    
+    /* Status */
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --error: 348 83% 47%;
+    --info: 214 95% 54%;
+    
+    /* Focus Ring */
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* 
+      HELIOX OBSIDIAN (Dark Theme)
+      Deep, premium, technical, calm, intelligent.
+    */
+    --background: 222 47% 7%;
+    
+    /* Surfaces */
+    --surface-1: 222 47% 11%;
+    --surface-2: 217 33% 17%;
+    --surface-3: 215 28% 22%;
+    
+    /* Borders */
+    --border: 217 33% 20%;
+    --border-subtle: 222 47% 14%;
+    
+    /* Typography */
+    --content-primary: 210 40% 98%;
+    --content-secondary: 215 20% 65%;
+    --content-tertiary: 215 16% 50%;
+    --content-muted: 215 16% 40%;
+    
+    /* Accents */
+    --primary: 217 91% 60%;
+    --primary-hover: 217 91% 65%;
+    --primary-foreground: 222 47% 7%;
+    
+    /* Quantum */
+    --quantum: 262 83% 68%;
+    --quantum-foreground: 222 47% 7%;
+    
+    /* Status */
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --error: 348 83% 47%;
+    --info: 217 91% 60%;
+    
+    /* Focus Ring */
+    --ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-content-primary font-sans antialiased;
+  }
+}

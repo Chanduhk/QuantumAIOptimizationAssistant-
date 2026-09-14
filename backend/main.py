@@ -1,7 +1,11 @@
+import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.app.adaptive import AdaptiveScheduler
@@ -13,12 +17,21 @@ from backend.app.orchestrator import AIOrchestrator
 from backend.app.pipeline import DecisionPipeline
 from backend.app.recommendation import RecommendationEngine
 from backend.app.services.behavior_engine import BehaviorIntelligenceEngine
-
-
+from backend.app.services.task_lifecycle_service import TaskLifecycleService
+from backend.app.ml.datasets import DatasetQualityAuditor, TaskCollectionReporter, TaskDataExtractor
 app = FastAPI(
     title="Quantum Life AI Behavior Intelligence API",
     version="1.0.0",
     description="Behavior learning backend for the Quantum Life AI personal assistant.",
+)
+
+origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in origins if origin.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -109,6 +122,26 @@ class CommandRequest(BaseModel):
     days_back: int = Field(default=90, ge=1, le=3650)
 
 
+class TaskCreateRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    title: str = Field(..., min_length=1, max_length=255)
+    task_type: str = Field(..., min_length=1, max_length=100)
+    priority: int = Field(default=3, ge=1, le=5)
+    estimated_duration: float = Field(..., gt=0)
+    created_at: Optional[datetime] = None
+
+
+class TaskStartRequest(BaseModel):
+    user_id: Optional[int] = Field(default=None, ge=1)
+    started_at: Optional[datetime] = None
+
+
+class TaskCompleteRequest(BaseModel):
+    user_id: Optional[int] = Field(default=None, ge=1)
+    completed_at: Optional[datetime] = None
+    actual_duration: Optional[float] = Field(default=None, gt=0)
+
+
 class TrainResponse(BaseModel):
     metrics: Dict[str, float]
 
@@ -159,6 +192,45 @@ class CommandResponse(BaseModel):
     result: Dict[str, Any]
 
 
+class TaskListResponse(BaseModel):
+    tasks: List[Dict[str, Any]]
+
+
+class TaskResponse(BaseModel):
+    task: Dict[str, Any]
+
+
+class ExecutivePlanRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    tasks: List[OrchestratorTaskInput] = Field(..., min_length=1)
+    query: Optional[str] = None
+    days_back: int = Field(default=90, ge=1, le=3650)
+
+
+class SystemHealthResponse(BaseModel):
+    status: str
+    database_connected: bool
+    timestamp: str
+
+
+class SystemStatusResponse(BaseModel):
+    status: str
+    ai_metrics: Dict[str, Any]
+
+
+class QuantumStatusResponse(BaseModel):
+    available: bool
+    config: Dict[str, Any]
+    qaoa_config: Dict[str, Any]
+    direct_execution_exposed: bool
+
+
+class ModelStatusResponse(BaseModel):
+    status: str
+    in_memory_only: bool
+    models_registered: int
+
+
 @app.on_event("startup")
 def startup() -> None:
     """Create database tables before the API starts serving requests."""
@@ -167,6 +239,10 @@ def startup() -> None:
 
 def _build_behavior_engine(session: Session) -> BehaviorIntelligenceEngine:
     return BehaviorIntelligenceEngine(session=session)
+
+
+def _build_task_lifecycle_service(session: Session) -> TaskLifecycleService:
+    return TaskLifecycleService(session=session)
 
 
 def _build_brain(session: Session) -> QuantumLifeBrain:
@@ -203,6 +279,104 @@ def _prepare_engine(engine: BehaviorIntelligenceEngine, user_id: int, days_back:
         raise HTTPException(status_code=404, detail="No completed tasks found for the user.")
 
     engine.extract_features()
+
+
+@app.post("/api/v1/tasks", response_model=MultiEngineResponse)
+def create_task(
+    request: TaskCreateRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_task_lifecycle_service(db)
+    try:
+        task = service.create_task(
+            user_id=request.user_id,
+            title=request.title,
+            task_type=request.task_type,
+            priority=request.priority,
+            estimated_duration=request.estimated_duration,
+            created_at=request.created_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MultiEngineResponse(result={"task": service.serialize_task(task)})
+
+
+@app.post("/api/v1/tasks/{task_id}/start", response_model=MultiEngineResponse)
+def start_task(
+    task_id: int,
+    request: TaskStartRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_task_lifecycle_service(db)
+    try:
+        task = service.start_task(
+            task_id=task_id,
+            user_id=request.user_id,
+            started_at=request.started_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MultiEngineResponse(result={"task": service.serialize_task(task)})
+
+
+@app.post("/api/v1/tasks/{task_id}/complete", response_model=MultiEngineResponse)
+def complete_task(
+    task_id: int,
+    request: TaskCompleteRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_task_lifecycle_service(db)
+    try:
+        task = service.complete_task(
+            task_id=task_id,
+            user_id=request.user_id,
+            completed_at=request.completed_at,
+            actual_duration=request.actual_duration,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MultiEngineResponse(result={"task": service.serialize_task(task)})
+
+
+@app.get("/api/v1/tasks/ml-dataset/readiness", response_model=MultiEngineResponse)
+def get_task_dataset_readiness(
+    user_id: Optional[int] = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    try:
+        extraction = TaskDataExtractor(db).extract(user_id=user_id)
+        collection_report = TaskCollectionReporter(db).report(user_id=user_id)
+        quality_audit = DatasetQualityAuditor().audit_extraction(
+            extraction,
+            collection_report=collection_report,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MultiEngineResponse(
+        result={
+            "adapter_report": extraction.report.to_dict(),
+            "collection_report": collection_report.to_dict(),
+            "quality_audit": quality_audit.to_dict(),
+        }
+    )
+
+
+@app.get("/api/v1/tasks/data-collection/status", response_model=MultiEngineResponse)
+def get_task_data_collection_status(
+    user_id: Optional[int] = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    try:
+        report = TaskCollectionReporter(db).report(user_id=user_id)
+        quality_audit = DatasetQualityAuditor().audit_session(db, user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MultiEngineResponse(
+        result={
+            "collection_report": report.to_dict(),
+            "quality_audit": quality_audit.to_dict(),
+        }
+    )
 
 
 @app.post("/api/v1/behavior/train", response_model=TrainResponse)
@@ -579,3 +753,114 @@ def ai_get_context(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return MultiEngineResponse(result=result)
+
+
+@app.get("/api/v1/tasks", response_model=TaskListResponse)
+def list_tasks(
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> TaskListResponse:
+    brain = _build_brain(db)
+    tasks = brain.get_active_tasks(user_id=user_id)
+    return TaskListResponse(tasks=tasks)
+
+
+@app.get("/api/v1/tasks/{task_id}", response_model=TaskResponse)
+def get_task(
+    task_id: int,
+    user_id: Optional[int] = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+) -> TaskResponse:
+    service = _build_task_lifecycle_service(db)
+    try:
+        task = service.get_task(task_id=task_id, user_id=user_id)
+        return TaskResponse(task=service.serialize_task(task))
+    except ValueError as exc:
+        if str(exc) == "task not found.":
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/ai/executive-plan", response_model=MultiEngineResponse)
+def generate_executive_plan(
+    request: ExecutivePlanRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    orchestrator = _build_orchestrator(db, days_back=request.days_back)
+    try:
+        result = orchestrator.execute_executive_planning(
+            tasks=[task.model_dump() for task in request.tasks],
+            user_id=request.user_id,
+            query=request.query,
+        )
+        return MultiEngineResponse(result=result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/system/health", response_model=SystemHealthResponse)
+def get_system_health(db: Session = Depends(get_db)) -> SystemHealthResponse:
+    try:
+        db.execute(text("SELECT 1"))
+        db_connected = True
+    except Exception:
+        db_connected = False
+        
+    return SystemHealthResponse(
+        status="operational" if db_connected else "degraded",
+        database_connected=db_connected,
+        timestamp=datetime.utcnow().isoformat()
+    )
+
+
+@app.get("/api/v1/system/status", response_model=SystemStatusResponse)
+def get_system_status() -> SystemStatusResponse:
+    from backend.app.monitoring import AIMonitor
+    monitor = AIMonitor()
+    return SystemStatusResponse(
+        status="operational",
+        ai_metrics=monitor.report_system_metrics()
+    )
+
+
+@app.get("/api/v1/quantum/status", response_model=QuantumStatusResponse)
+def get_quantum_status() -> QuantumStatusResponse:
+    try:
+        from backend.app.quantum.integration.models import AIQuantumIntegrationConfig
+        from backend.app.quantum.optimization import QAOAConfig
+        config = AIQuantumIntegrationConfig()
+        qaoa_config = QAOAConfig(shots=config.qaoa_shots, seed=config.qaoa_seed)
+        return QuantumStatusResponse(
+            available=True,
+            config={
+                "allow_quantum": config.allow_quantum,
+                "allow_classical_fallback": config.allow_classical_fallback,
+                "max_variables_for_quantum": config.max_variables_for_quantum,
+                "max_states_for_suitability": config.max_states_for_suitability,
+            },
+            qaoa_config={
+                "shots": qaoa_config.shots,
+                "seed": qaoa_config.seed,
+                "max_qubits": qaoa_config.max_qubits,
+                "max_shots": qaoa_config.max_shots,
+            },
+            direct_execution_exposed=False
+        )
+    except ImportError:
+        return QuantumStatusResponse(
+            available=False,
+            config={},
+            qaoa_config={},
+            direct_execution_exposed=False
+        )
+
+
+@app.get("/api/v1/ml/model-status", response_model=ModelStatusResponse)
+def get_model_status() -> ModelStatusResponse:
+    from backend.app.ml.model_registry import ModelRegistry
+    registry = ModelRegistry()
+    return ModelStatusResponse(
+        status="uninitialized",
+        in_memory_only=True,
+        models_registered=len(registry.store.list("behavior_model")) if hasattr(registry, "store") else 0
+    )

@@ -68,6 +68,9 @@ def create_tables(database_url: Optional[str] = None) -> None:
     if database_url is not None:
         init_db(database_url)
     Base.metadata.create_all(bind=engine)
+    from backend.app.services.task_lifecycle_service import ensure_task_lifecycle_schema_for_bind
+
+    ensure_task_lifecycle_schema_for_bind(engine)
 
 
 def get_db() -> Generator[Session, None, None]:
