@@ -14,7 +14,7 @@ class BehaviorObservation:
     observation_type: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
     productivity_score: float = 0.0
-    hour_of_day: int | None = None
+    hour_of_day: float | None = None
     task_type: str = "general"
     goal_id: str | None = None
     completed: bool = False
@@ -144,17 +144,23 @@ def _bounded_float(value: object, field_name: str, minimum: float, maximum: floa
     return max(minimum, min(maximum, number))
 
 
-def _hour(value: object, field_name: str) -> int:
+def _hour(value: object, field_name: str) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
-    if isinstance(value, int):
-        hour = value
-    elif isinstance(value, str) and value.strip().isdigit():
-        hour = int(value.strip())
+        raise ValueError(f"{field_name} must be an hour from 0 to 24.")
+    if isinstance(value, (int, float)):
+        hour = float(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
+        try:
+            hour = float(stripped)
+        except ValueError:
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
     else:
-        raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
-    if not 0 <= hour <= 23:
-        raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
+        raise ValueError(f"{field_name} must be an hour from 0 to 24.")
+    if not 0 <= hour <= 24.0:
+        raise ValueError(f"{field_name} must be an hour from 0 to 24.")
     return hour
 
 

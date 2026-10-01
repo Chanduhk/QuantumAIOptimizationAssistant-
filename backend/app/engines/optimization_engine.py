@@ -55,7 +55,8 @@ class OptimizationEngine:
             optimized_task = dict(task)
             optimized_task["optimized_hour"] = selected_hour
             optimized_task["optimized_end_hour"] = optimized_end_hour
-            optimized_task["hour_productivity_score"] = round(hourly_productivity.get(selected_hour, 0.0), 2)
+            # Hourly productivity lookup requires an integer hour key.
+            optimized_task["hour_productivity_score"] = round(hourly_productivity.get(int(selected_hour), 0.0), 2)
             if optimized_end_hour > schedule_window_end:
                 optimized_task["optimized_schedule_warning"] = "optimized_end_hour exceeds scheduling window."
                 optimized_task["capacity_warning"] = (
@@ -115,23 +116,23 @@ class OptimizationEngine:
         if not isinstance(hourly_productivity, dict):
             raise ValueError("hourly_productivity must be a dictionary.")
 
-        normalized: Dict[int, float] = {}
+        normalized: Dict[float, float] = {}
         for hour, score in hourly_productivity.items():
             parsed_hour = self._safe_hour(hour)
             if parsed_hour is None:
-                raise ValueError("hourly_productivity hours must be integer hours from 0 to 23.")
+                raise ValueError("hourly_productivity hours must be hours from 0 to 24.")
             normalized[parsed_hour] = self._finite_float(
                 score,
                 field_name="hourly_productivity scores",
             )
         return normalized
 
-    def _resolve_scheduled_hour(self, task: Dict[str, Any]) -> int:
+    def _resolve_scheduled_hour(self, task: Dict[str, Any]) -> float:
         if task.get("scheduled_hour") is None:
-            return 10
+            return 10.0
         hour = self._safe_hour(task.get("scheduled_hour"))
         if hour is None:
-            raise ValueError("scheduled_hour must be an integer hour from 0 to 23.")
+            raise ValueError("scheduled_hour must be an hour from 0 to 24.")
         return hour
 
     def _resolve_duration(self, task: Dict[str, Any]) -> float:
@@ -170,18 +171,21 @@ class OptimizationEngine:
             raise ValueError(f"{field_name} must be finite.")
         return number
 
-    def _safe_hour(self, value: Any) -> int | None:
+    def _safe_hour(self, value: Any) -> float | None:
         if isinstance(value, bool):
             return None
-        if isinstance(value, int):
-            hour = value
+        if isinstance(value, (int, float)):
+            hour = float(value)
         elif isinstance(value, str):
             stripped = value.strip()
-            if not stripped or not stripped.isdigit():
+            if not stripped:
                 return None
-            hour = int(stripped)
+            try:
+                hour = float(stripped)
+            except ValueError:
+                return None
         else:
             return None
-        if 0 <= hour <= 23:
+        if 0 <= hour <= 24.0:
             return hour
         return None

@@ -79,11 +79,11 @@ def test_scheduled_hour_overrides_explicit_hour(engine: PredictionEngine) -> Non
 def test_invalid_explicit_hour_fields_are_rejected(engine: PredictionEngine) -> None:
     behavior_engine = FakeBehaviorEngine()
 
-    with pytest.raises(ValueError, match="hour_of_day must be an integer hour"):
+    with pytest.raises(ValueError, match="hour_of_day must be an hour from 0 to 24."):
         engine.predict_productivity(behavior_engine, {"id": "focused", "hour_of_day": 99}, {})
 
-    with pytest.raises(ValueError, match="scheduled_hour must be an integer hour"):
-        engine.predict_productivity(behavior_engine, {"id": "scheduled", "scheduled_hour": 9.5}, {})
+    with pytest.raises(ValueError, match="scheduled_hour must be an hour from 0 to 24."):
+        engine.predict_productivity(behavior_engine, {"id": "scheduled", "scheduled_hour": 99}, {})
 
 
 def test_missing_hour_falls_back_to_focus_hours_then_default(engine: PredictionEngine) -> None:
@@ -170,9 +170,9 @@ def test_rejects_invalid_duration_values(engine: PredictionEngine, duration: obj
 @pytest.mark.parametrize(
     "task",
     [
-        {"id": "a", "optimized_hour": 24},
-        {"id": "a", "scheduled_hour": True},
-        {"id": "a", "hour_of_day": "9.5"},
+        {"id": "a", "optimized_hour": 25},
+        {"id": "a", "scheduled_hour": "invalid"},
+        {"id": "a", "hour_of_day": 99},
     ],
 )
 def test_rejects_invalid_hour_fields(engine: PredictionEngine, task: dict[str, object]) -> None:
@@ -184,8 +184,8 @@ def test_rejects_invalid_focus_hours(engine: PredictionEngine) -> None:
     with pytest.raises(ValueError, match="best_focus_hours must be a list"):
         engine.predict_productivity(FakeBehaviorEngine(), {"id": "a"}, {"best_focus_hours": "9"})
 
-    with pytest.raises(ValueError, match="best_focus_hours must contain integer hours"):
-        engine.predict_productivity(FakeBehaviorEngine(), {"id": "a"}, {"best_focus_hours": [9.5]})
+    with pytest.raises(ValueError, match="best_focus_hours must contain hours from 0 to 24"):
+        engine.predict_productivity(FakeBehaviorEngine(), {"id": "a"}, {"best_focus_hours": [99]})
 
 
 @pytest.mark.parametrize("prediction", [math.nan, math.inf, -math.inf, "bad"])

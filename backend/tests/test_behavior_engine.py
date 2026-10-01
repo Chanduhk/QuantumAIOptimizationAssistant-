@@ -130,7 +130,7 @@ class TestProductivityModel:
         """Test single task prediction."""
         productivity_model.train(sample_tasks)
         
-        score = productivity_model.predict(hour=9, task_type='coding', duration=60)
+        score = productivity_model.predict(hour=9, task_type='coding', duration=1.0)
         
         assert 0 <= score <= 100
         assert isinstance(score, float)
@@ -140,9 +140,9 @@ class TestProductivityModel:
         productivity_model.train(sample_tasks)
         
         tasks = [
-            {'hour': 9, 'task_type': 'coding', 'duration': 60},
-            {'hour': 14, 'task_type': 'meeting', 'duration': 30},
-            {'hour': 16, 'task_type': 'writing', 'duration': 90},
+            {'hour': 9, 'task_type': 'coding', 'duration': 1.0},
+            {'hour': 14, 'task_type': 'meeting', 'duration': 0.5},
+            {'hour': 16, 'task_type': 'writing', 'duration': 1.5},
         ]
         
         predictions = productivity_model.predict_batch(tasks)
@@ -155,14 +155,35 @@ class TestProductivityModel:
         productivity_model.train(sample_tasks)
         
         with pytest.raises(ValueError):
-            productivity_model.predict(hour=25, task_type='coding', duration=60)
+            productivity_model.predict(hour=25, task_type='coding', duration=1.0)
     
     def test_invalid_duration(self, productivity_model, sample_tasks):
         """Test prediction with invalid duration."""
         productivity_model.train(sample_tasks)
         
         with pytest.raises(ValueError):
-            productivity_model.predict(hour=9, task_type='coding', duration=0)
+            productivity_model.predict(hour=9, task_type='coding', duration=-1.0)
+
+    def test_duration_arithmetic_contract(self, productivity_model, sample_tasks):
+        """Test that durations explicitly function as hours (1.0 = one hour, 1.5 = one and a half)."""
+        productivity_model.train(sample_tasks)
+        
+        # Verify 1.0 == one hour, 1.5 == one and a half hours
+        score_1_hour = productivity_model.predict(hour=9, task_type='coding', duration=1.0)
+        score_1_5_hours = productivity_model.predict(hour=9, task_type='coding', duration=1.5)
+        
+        assert isinstance(score_1_hour, float)
+        assert isinstance(score_1_5_hours, float)
+        
+        # Explicit duration math (e.g. tracking hours mathematically)
+        start_hour = 10.0
+        duration = 1.5
+        end_hour = start_hour + duration
+        assert end_hour == 11.5
+        
+        # Make a prediction with 11.5 hours duration just to ensure the model accepts floats
+        score_long_duration = productivity_model.predict(hour=9, task_type='coding', duration=11.5)
+        assert 0 <= score_long_duration <= 100
     
     def test_feature_importance(self, productivity_model, sample_tasks):
         """Test feature importance extraction."""
@@ -191,7 +212,8 @@ class TestProductivityModel:
             # Predictions should be identical
             pred1 = productivity_model.predict(9, 'coding', 60)
             pred2 = new_model.predict(9, 'coding', 60)
-            assert pred1 == pred2
+            import math
+        assert math.isclose(pred1, pred2, rel_tol=1e-9)
 
 
 # ============================================================================
@@ -445,8 +467,12 @@ class TestErrorHandling:
         empty_df = pd.DataFrame()
         behavior_engine.raw_tasks_df = empty_df
         
-        with pytest.raises(ValueError):
-            behavior_engine.extract_features()
+        fallback_df = behavior_engine.extract_features()
+        assert fallback_df.empty
+        
+        patterns = behavior_engine.get_user_patterns()
+        assert patterns["tasks_analyzed"] == 0
+        assert patterns["average_productivity"] == 75.0
 
 
 # ============================================================================

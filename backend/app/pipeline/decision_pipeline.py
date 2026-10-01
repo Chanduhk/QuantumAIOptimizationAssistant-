@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.engine_registry import EngineRegistry
 from backend.app.core.events import EventBus
 from backend.app.monitoring import AIMonitor
-from backend.app.orchestrator import AIOrchestrator
+
 
 GOAL_RECEIVED = "GOAL_RECEIVED"
 CONTEXT_READY = "CONTEXT_READY"
@@ -30,13 +30,11 @@ class DecisionPipeline:
         *,
         days_back: int = 90,
         engine_registry: Optional[EngineRegistry] = None,
-        orchestrator: Optional[AIOrchestrator] = None,
         event_bus: Optional[EventBus] = None,
     ) -> None:
         self.session = session
         self.days_back = days_back
         self.engine_registry = engine_registry
-        self.orchestrator = orchestrator
         self.event_bus = event_bus or EventBus()
         self.logger = logging.getLogger(__name__)
         self.ai_monitor: Optional[AIMonitor] = None
@@ -51,15 +49,11 @@ class DecisionPipeline:
         self._latest_schedule: List[Dict[str, Any]] = []
 
     async def initialize_pipeline(self) -> None:
-        """Initialize all engine references from the registry and orchestrator."""
+        """Initialize all engine references from the registry."""
         if self._initialized:
             return
 
         self.engine_registry = self.engine_registry or EngineRegistry(self.session)
-        self.orchestrator = self.orchestrator or AIOrchestrator(
-            session=self.session,
-            days_back=self.days_back,
-        )
 
         self.behavior_engine = self.engine_registry.get_behavior_engine()
         self.decision_engine = self.engine_registry.get_decision_engine()
@@ -67,13 +61,13 @@ class DecisionPipeline:
         self.planning_engine = self.engine_registry.get_planning_engine()
         self.optimization_engine = self.engine_registry.get_optimization_engine()
 
-        self.cognitive_engine = self.orchestrator.cognitive_engine
-        self.context_engine = self.orchestrator.context_engine
-        self.rl_scheduler = self.orchestrator.rl_scheduler
-        self.memory_system = self.orchestrator.memory_system
-        self.feature_store = self.orchestrator.feature_store
-        self.knowledge_graph = self.orchestrator.knowledge_graph
-        self.ai_monitor = self.orchestrator.ai_monitor
+        self.cognitive_engine = self.engine_registry.get_cognitive_engine()
+        self.context_engine = self.engine_registry.get_context_engine()
+        self.rl_scheduler = self.engine_registry.get_rl_scheduler()
+        self.memory_system = self.engine_registry.get_memory_system()
+        self.feature_store = self.engine_registry.get_feature_store()
+        self.knowledge_graph = self.engine_registry.get_knowledge_graph()
+        self.ai_monitor = self.engine_registry.get_ai_monitor()
 
         self._initialized = True
 

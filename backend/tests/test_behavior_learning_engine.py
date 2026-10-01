@@ -48,7 +48,7 @@ def test_behavior_learning_domain_validation() -> None:
         BehaviorObservation("", "task")
 
     with pytest.raises(ValueError, match="hour_of_day"):
-        BehaviorObservation("o2", "task", hour_of_day=24)
+        BehaviorObservation("o2", "task", hour_of_day=25)
 
     with pytest.raises(ValueError, match="direction"):
         BehaviorTrend("t2", "productivity", "bad", 0.5)

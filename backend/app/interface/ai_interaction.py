@@ -9,13 +9,9 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.app.adaptive import AdaptiveScheduler
-from backend.app.core.engine_registry import EngineRegistry
-from backend.app.learning import AutonomousLearningLoop
 from backend.app.memory import VectorMemorySystem
 from backend.app.monitoring import AIMonitor
-from backend.app.pipeline import DecisionPipeline
-from backend.app.recommendation import RecommendationEngine
+from backend.app.orchestrator.ai_brain_controller import AIBrainController
 
 _INTENT_USAGE = defaultdict(int)
 
@@ -37,6 +33,7 @@ class AIInteractionLayer:
         self.engine_registry = engine_registry
         self.monitor = monitor or AIMonitor()
         self.memory_system = memory_system or VectorMemorySystem()
+        self.brain_controller: Optional[AIBrainController] = None
         self.logger = logging.getLogger(__name__)
         self._initialized = False
 
@@ -45,30 +42,14 @@ class AIInteractionLayer:
         if self._initialized:
             return
 
+        from backend.app.core.engine_registry import EngineRegistry
         self.engine_registry = self.engine_registry or EngineRegistry(self.session)
-        self.behavior_engine = self.engine_registry.get_behavior_engine()
-        self.prediction_engine = self.engine_registry.get_prediction_engine()
-        self.decision_pipeline = DecisionPipeline(
-            session=self.session,
-            days_back=self.days_back,
-            engine_registry=self.engine_registry,
-        )
-        self.adaptive_scheduler = AdaptiveScheduler(
-            session=self.session,
-            days_back=self.days_back,
-            decision_pipeline=self.decision_pipeline,
-        )
-        self.learning_loop = AutonomousLearningLoop(
+        self.brain_controller = AIBrainController(
             session=self.session,
             days_back=self.days_back,
             engine_registry=self.engine_registry,
             monitor=self.monitor,
-        )
-        self.recommendation_engine = RecommendationEngine(
-            session=self.session,
-            days_back=self.days_back,
-            engine_registry=self.engine_registry,
-            monitor=self.monitor,
+            memory_system=self.memory_system,
         )
         self._initialized = True
 
@@ -115,47 +96,12 @@ class AIInteractionLayer:
         }
         return parameters
 
-    async def execute_intent(self, intent: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Route an intent to the appropriate AI subsystem."""
+    async def execute_intent(self, request: "BrainRequest") -> "BrainResponse":
+        """Route a formally typed BrainRequest to the appropriate AI subsystem."""
         await self.initialize_engine()
-        user_id = int(parameters["user_id"])
-
-        if intent == "plan_day":
-            return await self.decision_pipeline.run_pipeline(
-                goal_text=str(parameters.get("goal") or parameters.get("command") or "Plan my day"),
-                user_id=user_id,
-            )
-
-        if intent == "optimize_schedule":
-            schedule = parameters.get("schedule") or self._latest_schedule_from_memory(user_id)
-            if not schedule:
-                pipeline_result = await self.decision_pipeline.run_pipeline(
-                    goal_text=str(parameters.get("goal") or parameters.get("command") or "Optimize my schedule"),
-                    user_id=user_id,
-                )
-                schedule = pipeline_result.get("schedule", [])
-            return await self.adaptive_scheduler.adapt_schedule(schedule=schedule, user_id=user_id)
-
-        if intent == "get_recommendations":
-            return await self.recommendation_engine.generate_recommendations(user_id)
-
-        if intent == "analyze_productivity":
-            task_history = self.behavior_engine.collect_behavior_data(
-                user_id=user_id,
-                days_back=self.days_back,
-            )
-            if task_history.empty:
-                raise ValueError("No completed tasks found for the user.")
-            self.behavior_engine.extract_features()
-            return {
-                "patterns": self.behavior_engine.get_user_patterns(),
-                "report": self.behavior_engine.generate_report(),
-            }
-
-        if intent == "run_learning_cycle":
-            return await self.learning_loop.run_learning_cycle(user_id)
-
-        raise ValueError(f"Unsupported intent: {intent}")
+        if not self.brain_controller:
+            raise RuntimeError("Brain Controller not initialized.")
+        return await self.brain_controller.process_intent(request)
 
     async def process_command(self, user_id: int, command: str) -> Dict[str, Any]:
         """Detect intent, parse parameters, execute the action, and log usage."""
@@ -165,8 +111,34 @@ class AIInteractionLayer:
         try:
             intent = self.detect_intent(command)
             parameters = self.parse_command(command)
-            parameters["user_id"] = user_id
-            result = await self.execute_intent(intent, parameters)
+            
+            from backend.app.orchestrator.brain_models import BrainRequest
+            import uuid
+            
+            brain_request = BrainRequest(
+                request_id=str(uuid.uuid4()),
+                user_id=user_id,
+                intent=intent,
+                command=command,
+                parameters=parameters,
+                days_back=self.days_back
+            )
+
+            brain_response = await self.execute_intent(brain_request)
+
+            result = brain_response.raw_result
+            if "schedule" not in result and brain_response.schedule:
+                result["schedule"] = brain_response.schedule
+            if "executive_summary" not in result:
+                result["executive_summary"] = brain_response.executive_summary
+            if "quantum_status" not in result:
+                result["quantum_status"] = brain_response.quantum_status
+            if "trace" not in result:
+                result["trace"] = brain_response.trace.model_dump()
+            if "success" not in result:
+                result["success"] = brain_response.success
+            if "errors" not in result:
+                result["errors"] = brain_response.errors
 
             self._store_command_memory(user_id=user_id, command=command, intent=intent, result=result)
             self._record_usage(intent=intent, duration=perf_counter() - started)

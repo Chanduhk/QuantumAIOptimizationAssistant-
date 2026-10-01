@@ -20,6 +20,90 @@ class Recommendation:
 class RecommendationEngine:
     """Generate ranked daily recommendations from context, evaluation, and forecast signals."""
 
+    def __init__(
+        self,
+        session: Any = None,
+        days_back: int = 90,
+        engine_registry: Any = None,
+        monitor: Any = None,
+    ) -> None:
+        self.session = session
+        self.days_back = days_back
+        self.engine_registry = engine_registry
+        self.monitor = monitor
+
+    async def generate_recommendations(self, user_id: int) -> Dict[str, Any]:
+        """Orchestrate AI brain signals to produce a comprehensive recommendation response."""
+        from backend.app.engines.brain_workflow import QuantumLifeBrain
+
+        if not self.session:
+            raise ValueError("Database session is required to generate recommendations.")
+
+        brain = QuantumLifeBrain(session=self.session)
+        # plan_day is a synchronous operation
+        context = {}
+        evaluation = {}
+        behavior_patterns = {}
+        prioritized_tasks = []
+
+        try:
+            plan_output = brain.plan_day(user_id=user_id, days_back=self.days_back)
+            context = plan_output.get("context", {})
+            evaluation = plan_output.get("optimization", {})
+            behavior_patterns = plan_output.get("behavior_patterns", {})
+            prioritized_tasks = plan_output.get("prioritized_tasks", [])
+        except ValueError as exc:
+            # Handle empty tasks or other logical pipeline aborts cleanly
+            if "No active tasks" not in str(exc):
+                raise
+
+        # Default forecast_score for daily generation
+        forecast_score = 0.8
+
+        # Run pure engine recommendation generation
+        recommendations = self.generate_daily_recommendations(
+            context=context,
+            evaluation=evaluation,
+            forecast_score=forecast_score,
+        )
+
+        focus_hours = [f"{hour}:00" for hour in behavior_patterns.get("best_focus_hours", [])]
+        if not focus_hours:
+            focus_hours = ["09:00", "14:00"]
+
+        task_ordering = [task.get("title", f"Task {task.get('id')}") for task in prioritized_tasks[:5]]
+
+        schedule_improvements = []
+        goal_progress_alerts = []
+        behavioral_insights = []
+
+        for rec in recommendations:
+            msg = f"{rec.title}: {rec.reason} -> {rec.action}"
+            if "Overload" in rec.reason or "Stress" in rec.reason or "Recovery" in rec.title:
+                schedule_improvements.append(msg)
+            elif "Forecast" in rec.reason or "Risk" in rec.title:
+                goal_progress_alerts.append(msg)
+            else:
+                behavioral_insights.append(msg)
+
+        if not prioritized_tasks:
+            behavioral_insights.append("You currently have no active tasks. Consider defining your goals for the day.")
+
+        if not schedule_improvements:
+            schedule_improvements.append("Schedule is optimal. No critical improvements needed.")
+        if not goal_progress_alerts:
+            goal_progress_alerts.append("All goals are tracking positively against the forecast.")
+        if not behavioral_insights:
+            behavioral_insights.append("Focus on high-leverage tasks to maintain productivity.")
+
+        return {
+            "focus_hours": focus_hours,
+            "task_ordering": task_ordering,
+            "schedule_improvements": schedule_improvements,
+            "goal_progress_alerts": goal_progress_alerts,
+            "behavioral_insights": behavioral_insights,
+        }
+
     def generate_from_context(self, context: Any) -> List[Recommendation]:
         """
         Generate recommendations from a ContextState-compatible object.

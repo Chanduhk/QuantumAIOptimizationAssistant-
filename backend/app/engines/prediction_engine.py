@@ -97,7 +97,7 @@ class PredictionEngine:
             if task.get(key) is not None:
                 hour = self._safe_hour(task.get(key))
                 if hour is None:
-                    raise ValueError(f"{key} must be an integer hour from 0 to 23.")
+                    raise ValueError(f"{key} must be an hour from 0 to 24.")
                 return hour
 
         best_focus_hours = behavior_patterns.get("best_focus_hours", [])
@@ -106,11 +106,11 @@ class PredictionEngine:
         if not isinstance(best_focus_hours, list):
             raise ValueError("best_focus_hours must be a list of integer hours.")
 
-        normalized_focus_hours: List[int] = []
+        normalized_focus_hours: List[float] = []
         for item in best_focus_hours:
             hour = self._safe_hour(item)
             if hour is None:
-                raise ValueError("best_focus_hours must contain integer hours from 0 to 23.")
+                raise ValueError("best_focus_hours must contain hours from 0 to 24.")
             normalized_focus_hours.append(hour)
 
         best_focus_hours = normalized_focus_hours
@@ -183,19 +183,22 @@ class PredictionEngine:
             raise ValueError(f"{field_name} must be finite.")
         return number
 
-    def _safe_hour(self, value: Any) -> int | None:
+    def _safe_hour(self, value: Any) -> float | None:
         if isinstance(value, bool):
             return None
-        if isinstance(value, int):
-            hour = value
+        if isinstance(value, (int, float)):
+            hour = float(value)
         elif isinstance(value, str):
             stripped = value.strip()
-            if not stripped or not stripped.isdigit():
+            if not stripped:
                 return None
-            hour = int(stripped)
+            try:
+                hour = float(stripped)
+            except ValueError:
+                return None
         else:
             return None
-        if 0 <= hour <= 23:
+        if 0 <= hour <= 24.0:
             return hour
         return None
 

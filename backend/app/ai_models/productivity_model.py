@@ -8,8 +8,6 @@ Uses RandomForestRegressor to predict productivity scores (0-100) based on:
 Handles model training, prediction, persistence, and feature importance extraction.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from pathlib import Path
@@ -28,7 +26,7 @@ class ProductivityModel:
     """ML model for predicting productivity scores."""
 
     # Task types recognized by the model
-    VALID_TASK_TYPES = {"coding", "research", "writing", "meeting", "admin"}
+    VALID_TASK_TYPES = {"coding", "research", "writing", "meeting", "admin", "other"}
 
     def __init__(self, model_path: Optional[str] = None) -> None:
         """Initialize ProductivityModel.
@@ -130,7 +128,7 @@ class ProductivityModel:
         Args:
             hour: Hour of day (0-23)
             task_type: Type of task (coding, research, writing, meeting, admin)
-            duration: Task duration in minutes
+            duration: Task duration in hours
 
         Returns:
             Predicted productivity score (0-100)
@@ -145,8 +143,9 @@ class ProductivityModel:
         if not isinstance(hour, (int, float)) or not (0 <= hour <= 23):
             raise ValueError(f"Hour must be 0-23, got {hour}")
 
+        # If task type is unknown, fall back to "other" if supported, else leave as is (will raise in encoder or retrain)
         if task_type not in self.VALID_TASK_TYPES:
-            raise ValueError(f"Task type must be one of {self.VALID_TASK_TYPES}, got {task_type}")
+            task_type = "other"
 
         if not isinstance(duration, (int, float)) or duration <= 0:
             raise ValueError(f"Duration must be > 0, got {duration}")
@@ -284,7 +283,10 @@ class ProductivityModel:
 
     def _loaded_model_is_compatible(self) -> bool:
         """Return whether a loaded persisted model can predict in this runtime."""
-        if self.model is None:
+        if self.model is None or self.task_type_encoder is None:
+            return False
+        # If the loaded model doesn't know about "other", it's incompatible and should retrain
+        if "other" not in self.task_type_encoder.classes_:
             return False
         try:
             self.model.predict(np.array([[9.0, 0.0, 60.0]]))
@@ -316,7 +318,10 @@ class ProductivityModel:
         features.append(hour_of_day)
 
         # Task type (encoded)
-        task_types = df["task_type"].astype(str).values
+        task_types_raw = df["task_type"].astype(str).values
+        # Map unseen labels to "other"
+        known_types = set(self.task_type_encoder.classes_)
+        task_types = [t if t in known_types else "other" for t in task_types_raw]
         task_type_encoded = self.task_type_encoder.transform(task_types).astype(float)
         features.append(task_type_encoded)
 

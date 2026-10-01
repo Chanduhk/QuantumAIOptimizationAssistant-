@@ -69,7 +69,15 @@ class BehaviorIntelligenceEngine:
     def extract_features(self) -> pd.DataFrame:
         """Convert raw task history into normalized behavioral features."""
         if self.raw_tasks_df.empty:
-            raise ValueError("No task history available. Call collect_behavior_data first.")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("No task history available. Returning empty behavior dataframe for cold start.")
+            self.behavior_data_df = pd.DataFrame(columns=[
+                "user_id", "task_id", "hour_of_day", "task_type", 
+                "duration", "focus_score", "energy_level", 
+                "completion_time", "productivity_score"
+            ])
+            return self.behavior_data_df
 
         frame = self.raw_tasks_df.copy()
         required_columns = {
@@ -127,7 +135,7 @@ class BehaviorIntelligenceEngine:
 
     def _sync_behavior_rows(self) -> None:
         """Store the derived rows for later analytics and traceability."""
-        if self.behavior_data_df.empty:
+        if self.behavior_data_df.empty or self.behavior_data_df["task_id"].min() < 0:
             return
 
         task_ids = self.behavior_data_df["task_id"].tolist()
@@ -168,6 +176,29 @@ class BehaviorIntelligenceEngine:
         """Summarize recurring productivity patterns for the active user."""
         if self.behavior_data_df.empty:
             self.extract_features()
+            
+        if self.behavior_data_df.empty:
+            # Cold-start deterministic profile without fabricating tasks
+            self.user_patterns = {
+                "user_id": self.active_user_id,
+                "tasks_analyzed": 0,
+                "average_productivity": 75.0,
+                "average_focus_score": 75.0,
+                "average_energy_level": 75.0,
+                "average_completion_time": 1.0,
+                "best_focus_hours": [10, 11, 14],
+                "preferred_task_types": ["coding", "research", "writing"],
+                "hourly_productivity": {
+                    10: 85.0, 11: 82.0, 14: 78.0, 15: 70.0, 16: 65.0
+                },
+                "productivity_by_task_type": {
+                    "coding": 80.0, "research": 78.0, "writing": 75.0, "meeting": 60.0, "admin": 55.0
+                },
+                "average_duration_by_task_type": {
+                    "coding": 2.0, "research": 1.5, "writing": 1.0, "meeting": 1.0, "admin": 0.5
+                },
+            }
+            return self.user_patterns
 
         grouped_hours = self.behavior_data_df.groupby("hour_of_day")["productivity_score"].mean()
         grouped_tasks = self.behavior_data_df.groupby("task_type")["productivity_score"].mean()
@@ -204,7 +235,12 @@ class BehaviorIntelligenceEngine:
 
         if not self.productivity_model.is_trained:
             if self.behavior_data_df.empty:
-                raise ValueError("No training data available for the active user.")
+                # Cold start: deterministic fallback heuristic
+                base_score = 75.0
+                # Morning peak around 10am
+                time_boost = (1.0 - (abs(hour_of_day - 10) / 12.0)) * 10.0
+                return base_score + time_boost
+            
             self.train_productivity_model()
 
         return self.productivity_model.predict(hour_of_day, task_type, duration)

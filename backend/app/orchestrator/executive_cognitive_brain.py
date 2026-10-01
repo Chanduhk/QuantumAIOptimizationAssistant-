@@ -173,6 +173,7 @@ class ExecutiveCognitiveBrain:
         goals: List[Dict[str, Any]] | None = None,
         query: str | None = None,
         quantum_result: Any | None = None,
+        intelligence_context: Any | None = None,
     ) -> Dict[str, Any]:
         """Execute the executive coordination pipeline and return one result object."""
         task_list = self._task_list(tasks)
@@ -185,6 +186,13 @@ class ExecutiveCognitiveBrain:
             behavior_patterns=behavior_patterns,
             query=query,
         )
+        if intelligence_context is not None:
+            executive_context["formal_intelligence"] = (
+                intelligence_context.to_executive_format()
+                if hasattr(intelligence_context, "to_executive_format")
+                else intelligence_context
+            )
+            
         executive_objectives = self._understand_objectives(task_list, goals)
         decision_state = self._evaluate_current_situation(task_list, behavior_patterns)
         candidate_plans = self._build_candidate_plans(decision_state["recommended_task_order"], behavior_patterns)
@@ -942,11 +950,21 @@ class ExecutiveCognitiveBrain:
         self._validate_numeric_payload(value, field_name)
 
     def _task_list(self, tasks: Any) -> List[Dict[str, Any]]:
+        import uuid
         if not isinstance(tasks, list):
             raise ValueError("tasks must be a list of dictionaries.")
         if any(not isinstance(task, dict) for task in tasks):
             raise ValueError("tasks must be a list of dictionaries.")
-        return [dict(task) for task in tasks]
+        
+        normalized = []
+        for i, task in enumerate(tasks):
+            t = dict(task)
+            if "id" not in t or not t["id"]:
+                t["id"] = str(uuid.uuid4())
+            elif not isinstance(t["id"], str):
+                t["id"] = str(t["id"])
+            normalized.append(t)
+        return normalized
 
     def _dict_list(self, value: Any, field_name: str) -> List[Dict[str, Any]]:
         if not isinstance(value, list):

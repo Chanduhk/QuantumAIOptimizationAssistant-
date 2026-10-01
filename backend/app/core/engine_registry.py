@@ -35,6 +35,15 @@ class EngineRegistry:
         self._optimization_engine: Optional[OptimizationEngine] = None
         self._learning_engine: Optional[LearningEngine] = None
 
+        # F7.2 Added Dependencies
+        self._memory_system = None
+        self._context_engine = None
+        self._rl_scheduler = None
+        self._feature_store = None
+        self._ai_monitor = None
+        self._knowledge_graph = None
+        self._cognitive_engine = None
+
     def get_behavior_engine(self) -> BehaviorIntelligenceEngine:
         """Return the shared behavior engine instance."""
         if self._behavior_engine is None:
@@ -77,6 +86,74 @@ class EngineRegistry:
             self._learning_engine = LearningEngine()
         return self._learning_engine
 
+    def get_memory_system(self):
+        if self._memory_system is None:
+            from backend.app.memory import VectorMemorySystem
+            self._memory_system = VectorMemorySystem()
+        return self._memory_system
+
+    def get_context_engine(self):
+        if self._context_engine is None:
+            from backend.app.context import ContextEngine
+            self._context_engine = ContextEngine(memory_system=self.get_memory_system())
+        return self._context_engine
+
+    def get_rl_scheduler(self):
+        if self._rl_scheduler is None:
+            from backend.app.ai_rl import RLScheduler
+            self._rl_scheduler = RLScheduler()
+        return self._rl_scheduler
+
+    def get_feature_store(self):
+        if self._feature_store is None:
+            from backend.app.ml import FeatureStore
+            self._feature_store = FeatureStore()
+        return self._feature_store
+
+    def get_ai_monitor(self):
+        if self._ai_monitor is None:
+            from backend.app.monitoring import AIMonitor
+            self._ai_monitor = AIMonitor()
+        return self._ai_monitor
+
+    def get_knowledge_graph(self):
+        if self._knowledge_graph is None:
+            from backend.app.knowledge import AIKnowledgeGraph
+            self._knowledge_graph = AIKnowledgeGraph()
+        return self._knowledge_graph
+
+    def get_goal_intelligence_engine(self):
+        if not hasattr(self, "_goal_intelligence_engine"):
+            from backend.app.engines.goal_intelligence_engine import GoalIntelligenceEngine
+            self._goal_intelligence_engine = GoalIntelligenceEngine()
+        return self._goal_intelligence_engine
+
+    def get_dependency_intelligence_engine(self):
+        if not hasattr(self, "_dependency_intelligence_engine"):
+            from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine
+            self._dependency_intelligence_engine = DependencyIntelligenceEngine()
+        return self._dependency_intelligence_engine
+
+    def get_future_simulation_engine(self):
+        if not hasattr(self, "_future_simulation_engine"):
+            from backend.app.engines.future_simulation_engine import FutureSimulationEngine
+            self._future_simulation_engine = FutureSimulationEngine()
+        return self._future_simulation_engine
+
+    def get_strategic_planning_engine(self):
+        if not hasattr(self, "_strategic_planning_engine"):
+            from backend.app.engines.strategic_planning_engine import StrategicPlanningEngine
+            self._strategic_planning_engine = StrategicPlanningEngine()
+        return self._strategic_planning_engine
+
+    def get_cognitive_engine(self):
+        if self._cognitive_engine is None:
+            from backend.app.cognitive import CognitiveEngine
+            self._cognitive_engine = CognitiveEngine(
+                behavior_engine=self.get_behavior_engine(),
+                knowledge_graph=self.get_knowledge_graph()
+            )
+        return self._cognitive_engine
 
 def get_engine_registry(db: Session = Depends(get_db)) -> EngineRegistry:
     """FastAPI dependency that provides a per-request engine registry."""

@@ -152,8 +152,8 @@ class BehaviorLearningEngine:
         patterns: List[BehaviorPattern] = []
         hourly = self._group_scores("hour_of_day")
         if hourly:
-            best_hour, best_score = max(hourly.items(), key=lambda item: (mean(item[1]), -int(item[0])))
-            worst_hour, worst_score = min(hourly.items(), key=lambda item: (mean(item[1]), int(item[0])))
+            best_hour, best_score = max(hourly.items(), key=lambda item: (mean(item[1]), -float(item[0])))
+            worst_hour, worst_score = min(hourly.items(), key=lambda item: (mean(item[1]), float(item[0])))
             patterns.append(self._pattern("best-work-hour", "focus", f"Best work hour is {best_hour}.", best_score))
             patterns.append(self._pattern("worst-work-hour", "focus", f"Worst work hour is {worst_hour}.", worst_score))
         task_scores = self._group_scores("task_type")

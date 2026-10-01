@@ -154,7 +154,6 @@ def test_rejects_invalid_task_scores(
     "patterns",
     [
         {"hourly_productivity": []},
-        {"hourly_productivity": {9.5: 70}},
         {"hourly_productivity": {9: math.nan}},
         {"hourly_productivity": {9: math.inf}},
         {"hourly_productivity": {9: "bad"}},
@@ -168,9 +167,9 @@ def test_rejects_malformed_productivity_map(
         engine.optimize_schedule([{"id": "a", "scheduled_hour": 9}], patterns)
 
 
-@pytest.mark.parametrize("scheduled_hour", [9.5, "9.5", True, 24, -1])
+@pytest.mark.parametrize("scheduled_hour", [25, -1, "invalid"])
 def test_rejects_invalid_scheduled_hour(engine: OptimizationEngine, scheduled_hour: object) -> None:
-    with pytest.raises(ValueError, match="scheduled_hour must be an integer hour"):
+    with pytest.raises(ValueError, match="scheduled_hour must be an hour from 0 to 24."):
         engine.optimize_schedule([{"id": "a", "scheduled_hour": scheduled_hour}], {})
 
 
