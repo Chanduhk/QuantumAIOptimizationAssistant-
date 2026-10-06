@@ -1,11 +1,62 @@
 from __future__ import annotations
 
+from backend.app.domain.optimization_input_contract import normalize_duration
+
 import math
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
+
+if TYPE_CHECKING:
+    from backend.app.domain.prediction_matrix import PredictionMatrix
 
 
 class OptimizationEngine:
-    """Re-map scheduled tasks to maximize productivity-weighted output."""
+    """Legacy schedule refinement plus the validated classical candidate path."""
+
+    def __init__(self) -> None:
+        from backend.app.domain.classical_optimizer import ClassicalOptimizer
+
+        self.classical_optimizer = ClassicalOptimizer()
+
+    def optimize_prediction_matrix(
+        self,
+        matrix: PredictionMatrix | None,
+        *,
+        unavailable_reason: str = "validated prediction matrix is unavailable",
+    ) -> Dict[str, Any]:
+        """Run the production classical candidate path or return explicit NOT_READY."""
+        if matrix is None:
+            return {
+                "status": "NOT_READY",
+                "candidate": None,
+                "mode": "PRODUCTION",
+                "reason": unavailable_reason,
+            }
+        candidate = self.classical_optimizer.optimize(matrix)
+        result = candidate.to_dict()
+        # F9.3 is a formulation stage only. It builds representations from
+        # the same validated matrix and candidate; it never invokes execution.
+        from backend.app.domain.assignment_qubo_ising import AssignmentQuboIsingBuilder
+
+        formulation = AssignmentQuboIsingBuilder().build(matrix)
+        result["qubo_ising"] = formulation.to_dict()
+        return result
+
+    def run_qaoa_candidate(
+        self,
+        formulation: Any,
+        matrix: PredictionMatrix | None,
+        *,
+        config: Any = None,
+        allow_test_mode: bool = False,
+    ) -> Dict[str, Any]:
+        """Explicit F9.4 stage; never invoked automatically by recommendation flow."""
+        from backend.app.domain.qaoa_solver import AssignmentQAOASolver
+
+        return AssignmentQAOASolver(allow_test_mode=allow_test_mode).solve(
+            formulation,
+            matrix,
+            config,
+        ).to_dict()
 
     def optimize_schedule(
         self,
@@ -136,13 +187,13 @@ class OptimizationEngine:
         return hour
 
     def _resolve_duration(self, task: Dict[str, Any]) -> float:
-        if task.get("estimated_duration") is not None:
-            raw_duration = task["estimated_duration"]
-        elif task.get("actual_duration") is not None:
-            raw_duration = task["actual_duration"]
-        else:
-            raw_duration = 1.0
-        return self._positive_finite_float(raw_duration, field_name="duration")
+        if task.get("estimated_duration") is None:
+            raise ValueError("estimated_duration is required for forward scheduling.")
+        duration_unit = task.get("estimated_duration_unit")
+        duration_source = task.get("estimated_duration_source")
+        if duration_unit is None or duration_source is None:
+            raise ValueError("explicit estimated duration unit and source are required.")
+        return normalize_duration(task["estimated_duration"], duration_unit, duration_source).normalized_hours
 
     def _optional_finite_float(
         self,

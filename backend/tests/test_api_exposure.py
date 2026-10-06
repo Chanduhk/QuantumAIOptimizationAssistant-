@@ -13,6 +13,7 @@ from backend.app.database.db import get_db
 from backend.app.models.base import Base
 from backend.app.models.task import Task
 from backend.app.services.task_lifecycle_service import TaskLifecycleService
+from backend.app.services.auth_service import CSRF_COOKIE
 
 
 class TestAPIExposure(unittest.TestCase):
@@ -35,6 +36,18 @@ class TestAPIExposure(unittest.TestCase):
                 
         app.dependency_overrides[get_db] = override_get_db
         cls.client = TestClient(app)
+        auth_response = cls.client.post(
+            "/api/v1/auth/register",
+            json={"email": "api-tests@example.com", "password": "api test secure password"},
+        )
+        if auth_response.status_code == 409:
+            cls.client.post(
+                "/api/v1/auth/login",
+                json={"email": "api-tests@example.com", "password": "api test secure password"},
+            )
+        cls.user_id = cls.client.get("/api/v1/auth/me").json()["id"]
+        csrf_token = cls.client.cookies.get(CSRF_COOKIE)
+        cls.client.headers.update({"X-CSRF-Token": csrf_token})
 
     def setUp(self) -> None:
         self.session = self.SessionLocal()
@@ -59,9 +72,9 @@ class TestAPIExposure(unittest.TestCase):
 
     def test_get_tasks_success(self) -> None:
         self.lifecycle.create_task(
-            user_id=1, title="Test 1", task_type="coding", priority=1, estimated_duration=30.0
+            user_id=self.user_id, title="Test 1", task_type="coding", priority=1, estimated_duration=30.0
         )
-        response = self.client.get("/api/v1/tasks?user_id=1")
+        response = self.client.get(f"/api/v1/tasks?user_id={self.user_id}")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("tasks", data)
@@ -69,7 +82,7 @@ class TestAPIExposure(unittest.TestCase):
         self.assertEqual(data["tasks"][0]["title"], "Test 1")
 
     def test_get_tasks_empty(self) -> None:
-        response = self.client.get("/api/v1/tasks?user_id=1")
+        response = self.client.get(f"/api/v1/tasks?user_id={self.user_id}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["tasks"]), 0)
 
@@ -82,30 +95,30 @@ class TestAPIExposure(unittest.TestCase):
 
     def test_get_task_by_id_success(self) -> None:
         task = self.lifecycle.create_task(
-            user_id=1, title="Test Single", task_type="coding", priority=2, estimated_duration=60.0
+            user_id=self.user_id, title="Test Single", task_type="coding", priority=2, estimated_duration=60.0
         )
-        response = self.client.get(f"/api/v1/tasks/{task.id}?user_id=1")
+        response = self.client.get(f"/api/v1/tasks/{task.id}?user_id={self.user_id}")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["task"]["title"], "Test Single")
 
     def test_get_task_by_id_not_found(self) -> None:
-        response = self.client.get("/api/v1/tasks/999?user_id=1")
+        response = self.client.get(f"/api/v1/tasks/999?user_id={self.user_id}")
         self.assertEqual(response.status_code, 404)
-        self.assertEqual(response.json()["detail"], "Task not found")
+        self.assertEqual(response.json()["detail"], "Task not found.")
 
     def test_get_task_by_id_user_isolation(self) -> None:
         task = self.lifecycle.create_task(
-            user_id=1, title="Test Single", task_type="coding", priority=2, estimated_duration=60.0
+            user_id=2, title="Test Single", task_type="coding", priority=2, estimated_duration=60.0
         )
-        response = self.client.get(f"/api/v1/tasks/{task.id}?user_id=2")
+        response = self.client.get(f"/api/v1/tasks/{task.id}?user_id={self.user_id}")
         self.assertEqual(response.status_code, 404)
 
     @patch("backend.app.orchestrator.ai_orchestrator.AIOrchestrator.execute_executive_planning")
     def test_executive_plan_success(self, mock_execute: MagicMock) -> None:
         mock_execute.return_value = {"executive_summary": "Test summary", "recommended_plan": {}}
         payload = {
-            "user_id": 1,
+            "user_id": self.user_id,
             "tasks": [{"title": "Task 1", "type": "coding", "priority": 1, "duration": 30.0}],
             "query": "Plan this",
             "days_back": 90
@@ -115,10 +128,34 @@ class TestAPIExposure(unittest.TestCase):
         self.assertEqual(response.json()["result"]["executive_summary"], "Test summary")
 
     @patch("backend.app.orchestrator.ai_orchestrator.AIOrchestrator.execute_executive_planning")
+    def test_executive_plan_preserves_task_identity_and_duration_provenance(self, mock_execute: MagicMock) -> None:
+        mock_execute.return_value = {"executive_summary": "Test summary", "recommended_plan": {}}
+        response = self.client.post(
+            "/api/v1/ai/executive-plan",
+            json={
+                "user_id": self.user_id,
+                "tasks": [{
+                    "id": 42,
+                    "title": "Task 1",
+                    "type": "coding",
+                    "priority": 1,
+                    "duration": 30.0,
+                    "estimated_duration_unit": "minutes",
+                    "estimated_duration_source": "task_api",
+                }],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        submitted = mock_execute.call_args.kwargs["tasks"][0]
+        self.assertEqual(submitted["id"], 42)
+        self.assertEqual(submitted["estimated_duration_unit"], "minutes")
+        self.assertEqual(submitted["estimated_duration_source"], "task_api")
+
+    @patch("backend.app.orchestrator.ai_orchestrator.AIOrchestrator.execute_executive_planning")
     def test_executive_plan_failure(self, mock_execute: MagicMock) -> None:
         mock_execute.side_effect = ValueError("Invalid tasks")
         payload = {
-            "user_id": 1,
+            "user_id": self.user_id,
             "tasks": [{"title": "Task 1", "type": "coding", "priority": 1, "duration": 30.0}]
         }
         response = self.client.post("/api/v1/ai/executive-plan", json=payload)

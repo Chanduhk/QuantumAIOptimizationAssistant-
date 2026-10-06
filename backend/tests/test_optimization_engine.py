@@ -12,8 +12,8 @@ def engine() -> OptimizationEngine:
 
 def test_optimizes_schedule_by_pairing_best_tasks_with_best_hours(engine: OptimizationEngine) -> None:
     scheduled_tasks = [
-        {"id": "low", "predicted_productivity": 30, "scheduled_hour": 8, "estimated_duration": 1, "schedule_score": 20},
-        {"id": "high", "predicted_productivity": 90, "scheduled_hour": 10, "estimated_duration": 2, "schedule_score": 40},
+        {"id": "low", "predicted_productivity": 30, "scheduled_hour": 8, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture", "schedule_score": 20},
+        {"id": "high", "predicted_productivity": 90, "scheduled_hour": 10, "estimated_duration": 2, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture", "schedule_score": 40},
     ]
     patterns = {"hourly_productivity": {8: 50, 10: 90}}
 
@@ -28,8 +28,8 @@ def test_optimizes_schedule_by_pairing_best_tasks_with_best_hours(engine: Optimi
 
 def test_projected_productivity_gain_uses_baseline_schedule_scores(engine: OptimizationEngine) -> None:
     scheduled_tasks = [
-        {"id": "a", "predicted_productivity": 90, "scheduled_hour": 9, "schedule_score": 30},
-        {"id": "b", "predicted_productivity": 80, "scheduled_hour": 10, "schedule_score": 40},
+        {"id": "a", "predicted_productivity": 90, "scheduled_hour": 9, "schedule_score": 30, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
+        {"id": "b", "predicted_productivity": 80, "scheduled_hour": 10, "schedule_score": 40, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
     ]
     patterns = {"hourly_productivity": {9: 100, 10: 90}}
 
@@ -46,8 +46,8 @@ def test_empty_schedule_returns_empty_result_schema(engine: OptimizationEngine) 
 
 def test_optimized_schedule_is_sorted_by_optimized_hour(engine: OptimizationEngine) -> None:
     scheduled_tasks = [
-        {"id": "a", "predicted_productivity": 100, "scheduled_hour": 12},
-        {"id": "b", "predicted_productivity": 10, "scheduled_hour": 8},
+        {"id": "a", "predicted_productivity": 100, "scheduled_hour": 12, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
+        {"id": "b", "predicted_productivity": 10, "scheduled_hour": 8, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
     ]
 
     result = engine.optimize_schedule(scheduled_tasks, {"hourly_productivity": {12: 80, 8: 20}})
@@ -56,7 +56,7 @@ def test_optimized_schedule_is_sorted_by_optimized_hour(engine: OptimizationEngi
 
 
 def test_missing_schedule_score_counts_as_zero_baseline(engine: OptimizationEngine) -> None:
-    scheduled_tasks = [{"id": "a", "predicted_productivity": 1, "scheduled_hour": 9}]
+    scheduled_tasks = [{"id": "a", "predicted_productivity": 1, "scheduled_hour": 9, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}]
 
     result = engine.optimize_schedule(scheduled_tasks, {"hourly_productivity": {9: 42}})
 
@@ -64,16 +64,16 @@ def test_missing_schedule_score_counts_as_zero_baseline(engine: OptimizationEngi
 
 
 def test_rejects_non_positive_duration(engine: OptimizationEngine) -> None:
-    scheduled_tasks = [{"id": "a", "predicted_productivity": 1, "scheduled_hour": 9, "estimated_duration": -2}]
+    scheduled_tasks = [{"id": "a", "predicted_productivity": 1, "scheduled_hour": 9, "estimated_duration": -2, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}]
 
-    with pytest.raises(ValueError, match="duration must be positive"):
+    with pytest.raises(ValueError, match="greater than zero"):
         engine.optimize_schedule(scheduled_tasks, {"hourly_productivity": {9: 42}})
 
 
 def test_optimization_is_deterministic(engine: OptimizationEngine) -> None:
     scheduled_tasks = [
-        {"id": "a", "predicted_productivity": 20, "scheduled_hour": 9},
-        {"id": "b", "predicted_productivity": 30, "scheduled_hour": 10},
+        {"id": "a", "predicted_productivity": 20, "scheduled_hour": 9, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
+        {"id": "b", "predicted_productivity": 30, "scheduled_hour": 10, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
     ]
     patterns = {"hourly_productivity": {9: 50, 10: 60}}
 
@@ -94,13 +94,13 @@ def test_rejects_invalid_inputs(engine: OptimizationEngine) -> None:
         engine.optimize_schedule([], None)
 
     with pytest.raises(ValueError, match="Each scheduled task must be a dictionary"):
-        engine.optimize_schedule([{"id": "valid"}, "bad"], {})
+        engine.optimize_schedule([{"id": "valid", "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}, "bad"], {})
 
 
 def test_string_productivity_keys_match_integer_key_behavior(engine: OptimizationEngine) -> None:
     scheduled_tasks = [
-        {"id": "a", "predicted_productivity": 90, "scheduled_hour": 9, "schedule_score": 10},
-        {"id": "b", "predicted_productivity": 80, "scheduled_hour": 10, "schedule_score": 20},
+        {"id": "a", "predicted_productivity": 90, "scheduled_hour": 9, "schedule_score": 10, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
+        {"id": "b", "predicted_productivity": 80, "scheduled_hour": 10, "schedule_score": 20, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"},
     ]
 
     string_result = engine.optimize_schedule(
@@ -123,7 +123,7 @@ def test_rejects_non_finite_or_non_numeric_duration(
 ) -> None:
     with pytest.raises(ValueError):
         engine.optimize_schedule(
-            [{"id": "a", "scheduled_hour": 9, "estimated_duration": duration}],
+            [{"id": "a", "scheduled_hour": 9, "estimated_duration": duration, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}],
             {"hourly_productivity": {9: 50}},
         )
 
@@ -144,7 +144,7 @@ def test_rejects_invalid_task_scores(
     field: str,
     value: object,
 ) -> None:
-    task = {"id": "a", "scheduled_hour": 9, field: value}
+    task = {"id": "a", "scheduled_hour": 9, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture", field: value}
 
     with pytest.raises(ValueError):
         engine.optimize_schedule([task], {"hourly_productivity": {9: 50}})
@@ -164,18 +164,18 @@ def test_rejects_malformed_productivity_map(
     patterns: dict[str, object],
 ) -> None:
     with pytest.raises(ValueError):
-        engine.optimize_schedule([{"id": "a", "scheduled_hour": 9}], patterns)
+        engine.optimize_schedule([{"id": "a", "scheduled_hour": 9, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}], patterns)
 
 
 @pytest.mark.parametrize("scheduled_hour", [25, -1, "invalid"])
 def test_rejects_invalid_scheduled_hour(engine: OptimizationEngine, scheduled_hour: object) -> None:
     with pytest.raises(ValueError, match="scheduled_hour must be an hour from 0 to 24."):
-        engine.optimize_schedule([{"id": "a", "scheduled_hour": scheduled_hour}], {})
+        engine.optimize_schedule([{"id": "a", "scheduled_hour": scheduled_hour, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}], {})
 
 
 def test_optimized_end_hour_overflow_adds_warning_fields(engine: OptimizationEngine) -> None:
     result = engine.optimize_schedule(
-        [{"id": "a", "scheduled_hour": 9, "estimated_duration": 3}],
+        [{"id": "a", "scheduled_hour": 9, "estimated_duration": 3, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}],
         {"hourly_productivity": {9: 50}},
     )
 
@@ -188,9 +188,9 @@ def test_optimized_end_hour_overflow_adds_warning_fields(engine: OptimizationEng
 def test_optimized_end_hour_within_window_has_no_warning_fields(engine: OptimizationEngine) -> None:
     result = engine.optimize_schedule(
         [
-            {"id": "a", "scheduled_hour": 9, "estimated_duration": 1, "predicted_productivity": 3},
-            {"id": "b", "scheduled_hour": 10, "estimated_duration": 1, "predicted_productivity": 2},
-            {"id": "c", "scheduled_hour": 12, "estimated_duration": 1, "predicted_productivity": 1},
+            {"id": "a", "scheduled_hour": 9, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture", "predicted_productivity": 3},
+            {"id": "b", "scheduled_hour": 10, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture", "predicted_productivity": 2},
+            {"id": "c", "scheduled_hour": 12, "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture", "predicted_productivity": 1},
         ],
         {"hourly_productivity": {9: 70, 10: 60, 12: 10}},
     )
@@ -202,7 +202,7 @@ def test_optimized_end_hour_within_window_has_no_warning_fields(engine: Optimiza
 
 
 def test_missing_fields_use_backward_compatible_defaults(engine: OptimizationEngine) -> None:
-    result = engine.optimize_schedule([{"id": "a"}], {})
+    result = engine.optimize_schedule([{"id": "a", "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}], {})
 
     optimized = result["optimized_schedule"][0]
     assert optimized["optimized_hour"] == 10
@@ -218,7 +218,7 @@ def test_large_schedule_is_deterministic_and_numeric(engine: OptimizationEngine)
             "scheduled_hour": 8 + (index % 12),
             "predicted_productivity": index % 100,
             "schedule_score": float(index % 10),
-            "estimated_duration": 1,
+            "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture",
         }
         for index in range(150)
     ]

@@ -47,7 +47,7 @@ class DecisionEngine:
             predicted_productivity = prediction_by_id.get(task.get("id"), 0.0)
             priority = self._bounded_float(task.get("priority"), default=0.0, minimum=0.0, maximum=10.0)
             duration = self._bounded_float(
-                task.get("estimated_duration", task.get("actual_duration", 1.0)),
+                task.get("estimated_duration", 1.0),
                 default=1.0,
                 minimum=0.0,
                 maximum=24.0,

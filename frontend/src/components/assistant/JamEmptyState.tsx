@@ -9,19 +9,19 @@ export function JamEmptyState({ onSuggestionClick }: JamEmptyStateProps) {
   const suggestions = [
     {
       icon: <LayoutList className="w-5 h-5" />,
-      text: "Plan my tasks",
+      text: "Plan my day",
     },
     {
       icon: <Activity className="w-5 h-5" />,
-      text: "Analyze my priorities",
+      text: "Get recommendations",
     },
     {
       icon: <Sparkles className="w-5 h-5" />,
-      text: "Help optimize my schedule",
+      text: "Optimize my schedule",
     },
     {
       icon: <GitMerge className="w-5 h-5" />,
-      text: "Explore my tasks",
+      text: "Analyze my productivity",
     }
   ];
 

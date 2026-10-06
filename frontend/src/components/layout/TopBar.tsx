@@ -1,9 +1,16 @@
 import * as React from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Search, Bell, User, Menu, Moon, Sun, Monitor } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useUIStore } from "@/stores/uiStore";
 import { StatusIndicator } from "@/components/ui/StatusIndicator";
+import { api } from "@/api/endpoints";
+import { CURRENT_USER_QUERY_KEY, useCurrentUser } from "@/api/hooks";
+import { useQueryClient } from "@tanstack/react-query";
+import { getApiErrorMessage } from "@/api/client";
+import { useUserStore } from "@/stores/userStore";
+import { useToastStore } from "@/stores/toastStore";
+import { useJamStore } from "@/stores/jamStore";
 
 const routeNames: Record<string, string> = {
   "/": "Dashboard",
@@ -21,7 +28,29 @@ const routeNames: Record<string, string> = {
 export function TopBar() {
   const location = useLocation();
   const { toggleSidebar, theme, setTheme } = useUIStore();
+  const { data: currentUser } = useCurrentUser();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const setUserId = useUserStore((state) => state.setUserId);
+  const addToast = useToastStore((state) => state.addToast);
+  const [loggingOut, setLoggingOut] = React.useState(false);
   const currentTitle = routeNames[location.pathname] || "HELIOX AI";
+
+  const handleLogout = async () => {
+    try {
+      setLoggingOut(true);
+      await api.auth.logout();
+      setUserId(null);
+      useJamStore.getState().clearMessages();
+      queryClient.clear();
+      queryClient.setQueryData(CURRENT_USER_QUERY_KEY, null);
+      await navigate("/login", { replace: true });
+    } catch (error: unknown) {
+      addToast({ type: "error", title: "Sign out failed", message: getApiErrorMessage(error) });
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-md">
@@ -110,11 +139,12 @@ export function TopBar() {
         </IconButton>
 
         {/* User Context */}
-        <div className="flex items-center gap-2 ml-1 p-1 pr-3 rounded-full bg-surface-2 border border-border cursor-pointer hover:bg-surface-3 transition-colors">
+        <div className="flex items-center gap-2 ml-1 p-1 pl-2 rounded-full bg-surface-2 border border-border">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
             <User className="h-4 w-4" />
           </div>
-          <span className="hidden sm:inline text-sm font-medium text-content-primary">Local User</span>
+          <span className="hidden max-w-40 truncate sm:inline text-sm font-medium text-content-primary">{currentUser?.email ?? "Signed in"}</span>
+          <button type="button" onClick={handleLogout} disabled={loggingOut} className="rounded px-2 py-1 text-xs text-content-secondary hover:bg-surface-3 hover:text-content-primary disabled:opacity-50">{loggingOut ? "Signing out…" : "Sign out"}</button>
         </div>
       </div>
     </header>

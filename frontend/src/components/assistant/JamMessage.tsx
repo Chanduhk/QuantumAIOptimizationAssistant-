@@ -1,12 +1,14 @@
 import React from 'react';
 import { AlertCircle, Sparkles } from 'lucide-react';
 import { JamMessage as JamMessageType } from '@/stores/jamStore';
+import { Button } from '@/components/ui/Button';
 
 interface JamMessageProps {
   message: JamMessageType;
+  onRetry?: () => void;
 }
 
-export function JamMessage({ message }: JamMessageProps) {
+export function JamMessage({ message, onRetry }: JamMessageProps) {
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -45,7 +47,14 @@ export function JamMessage({ message }: JamMessageProps) {
             {message.isError ? (
               <div className="flex items-start gap-3 p-4 rounded-xl border border-red-500/20 bg-red-500/5 text-red-400">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <p className="text-sm">{message.errorMessage || "JAM couldn't complete that command."}</p>
+                <div className="space-y-2">
+                  <p className="text-sm">{message.errorMessage || "JAM couldn't complete that command."}</p>
+                  {onRetry && <Button size="sm" variant="secondary" onClick={onRetry}>Retry</Button>}
+                </div>
+              </div>
+            ) : message.isPending ? (
+              <div role="status" className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/50 text-sm text-[var(--color-text-muted)]">
+                JAM is processing the request…
               </div>
             ) : (
               <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/50 space-y-4">

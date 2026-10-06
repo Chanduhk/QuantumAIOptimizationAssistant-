@@ -37,6 +37,8 @@ class TaskLifecycleService:
         task_type: str,
         priority: int,
         estimated_duration: float,
+        estimated_duration_unit: str = "minutes",
+        estimated_duration_source: str = "task_api",
         created_at: datetime | None = None,
     ) -> Task:
         """Create a task with prediction-time fields only."""
@@ -48,6 +50,8 @@ class TaskLifecycleService:
             task_type=self._safe_text(task_type, "task_type"),
             priority=self._priority(priority),
             estimated_duration=self._positive_float(estimated_duration, "estimated_duration"),
+            estimated_duration_unit=self._duration_unit(estimated_duration_unit),
+            estimated_duration_source=self._safe_text(estimated_duration_source, "estimated_duration_source"),
             actual_duration=None,
             start_time=None,
             end_time=None,
@@ -120,6 +124,12 @@ class TaskLifecycleService:
 
         return self._get_task(task_id=task_id, user_id=user_id)
 
+    def get_all_tasks(self, *, user_id: int) -> list[Task]:
+        """Return all tasks for a given user regardless of completion state."""
+        return self.session.query(Task).filter(
+            Task.user_id == self._positive_int(user_id, "user_id")
+        ).order_by(Task.created_at.desc()).all()
+
     def serialize_task(self, task: Task) -> dict[str, Any]:
         """Return a deterministic API-safe task representation."""
 
@@ -130,6 +140,8 @@ class TaskLifecycleService:
             "task_type": task.task_type,
             "priority": task.priority,
             "estimated_duration": task.estimated_duration,
+            "estimated_duration_unit": task.estimated_duration_unit,
+            "estimated_duration_source": task.estimated_duration_source,
             "actual_duration": task.actual_duration,
             "created_at": None if task.created_at is None else task.created_at.isoformat(),
             "start_time": None if task.start_time is None else task.start_time.isoformat(),
@@ -192,6 +204,12 @@ class TaskLifecycleService:
         return priority
 
     @staticmethod
+    def _duration_unit(value: str) -> str:
+        if value not in {"minutes", "hours"}:
+            raise ValueError("estimated_duration_unit must be 'minutes' or 'hours'.")
+        return value
+
+    @staticmethod
     def _positive_float(value: Any, field_name: str) -> float:
         if isinstance(value, bool):
             raise ValueError(f"{field_name} must be numeric.")
@@ -227,6 +245,8 @@ def ensure_task_lifecycle_schema_for_bind(bind: Any) -> None:
             ("created_at", "DATETIME"),
             ("lifecycle_state", "VARCHAR(32)"),
             ("outcome_valid", "BOOLEAN"),
+            ("estimated_duration_unit", "VARCHAR(16)"),
+            ("estimated_duration_source", "VARCHAR(64)"),
         )
         if name not in existing_columns
     ]

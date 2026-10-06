@@ -57,23 +57,33 @@ class VectorMemorySystem:
             "metadata": metadata,
         }
 
-    def search_similar_tasks(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def search_similar_tasks(
+        self, query: str, limit: int = 5, *, user_id: int | None = None
+    ) -> List[Dict[str, Any]]:
         """Search semantic memory for similar historical tasks or decisions."""
         if not self.records:
             return []
 
         query_embedding = self._embed([query])[0].reshape(1, -1)
-        distances, indices = self._search_index(query_embedding, limit)
+        search_limit = len(self.records) if user_id is not None else limit
+        distances, indices = self._search_index(query_embedding, search_limit)
 
         results: List[Dict[str, Any]] = []
         for distance, index in zip(distances[0], indices[0]):
             if index < 0 or index >= len(self.records):
                 continue
             record = dict(self.records[index])
+            metadata = record.get("metadata")
+            if user_id is not None and (
+                not isinstance(metadata, dict) or metadata.get("user_id") != user_id
+            ):
+                continue
             score = 1.0 / (1.0 + float(distance))
             record["similarity_score"] = round(score, 4)
             record["memory_id"] = index
             results.append(record)
+            if len(results) >= limit:
+                break
         return results
 
     def retrieve_context(self, user_id: int, limit: int = 10) -> Dict[str, Any]:

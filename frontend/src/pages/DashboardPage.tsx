@@ -197,7 +197,7 @@ function QuantumCapability() {
         <CardTitle className="text-sm flex items-center justify-between text-quantum">
           <span className="flex items-center gap-2"><Atom className="h-4 w-4" /> Quantum Status</span>
           <Badge variant={data.available ? "quantum" : "default"}>
-            {data.available ? "Available" : "Unavailable"}
+            {data.available ? "Configuration available" : "Configuration unavailable"}
           </Badge>
         </CardTitle>
       </CardHeader>
@@ -205,8 +205,8 @@ function QuantumCapability() {
         <div className="space-y-4">
           {!data.direct_execution_exposed && (
             <div className="rounded-md bg-surface-2 p-3 border border-border">
-              <p className="text-xs font-medium text-content-primary">Model-based quantum optimization</p>
-              <p className="text-xs text-content-secondary mt-1">Direct quantum hardware execution is not exposed through the current API.</p>
+              <p className="text-xs font-medium text-content-primary">Local software simulation</p>
+              <p className="text-xs text-content-secondary mt-1">No physical quantum hardware execution is used or exposed by this application.</p>
             </div>
           )}
           

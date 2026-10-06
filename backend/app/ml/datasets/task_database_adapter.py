@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 
 from sqlalchemy.orm import Session
 
+from backend.app.domain.optimization_input_contract import normalize_duration
 from backend.app.ml.datasets.builder import DatasetBuildResult, DurationDatasetBuilder
 from backend.app.ml.datasets.events import EventType, RawTaskEvent
 from backend.app.ml.datasets.models import DataQualityIssue, _datetime, _freeze_mapping, _safe_text
@@ -209,7 +210,13 @@ class TaskDataExtractor:
         user_id = str(self._positive_int(getattr(task, "user_id", None), "task.user_id"))
         task_type = _safe_text(str(getattr(task, "task_type", "")), "task.task_type")
         priority = self._priority(getattr(task, "priority", None))
-        estimate = self._positive_float(getattr(task, "estimated_duration", None), "task.estimated_duration")
+        raw_estimate = self._positive_float(getattr(task, "estimated_duration", None), "task.estimated_duration")
+        estimate_unit = getattr(task, "estimated_duration_unit", None)
+        estimate_source = getattr(task, "estimated_duration_source", None)
+        if estimate_unit not in {"minutes", "hours"} or not isinstance(estimate_source, str) or not estimate_source.strip():
+            raise ValueError("task.estimated_duration unit/source is unknown; legacy estimate is ineligible.")
+        normalized_estimate = normalize_duration(raw_estimate, estimate_unit, estimate_source)
+        estimate = normalized_estimate.normalized_hours * 60.0
         start_time = _datetime(getattr(task, "start_time", None), "task.start_time")
         created_at = getattr(task, "created_at", None)
         prediction_time = created_at if isinstance(created_at, datetime) else start_time

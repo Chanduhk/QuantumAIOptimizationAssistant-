@@ -15,6 +15,8 @@ export interface JamMessage {
   // For errors
   isError?: boolean;
   errorMessage?: string;
+  retryCommand?: string;
+  isPending?: boolean;
 }
 
 interface JamState {
@@ -39,7 +41,7 @@ export const useJamStore = create<JamState>((set) => ({
       ),
     })),
     
-  clearMessages: () => set({ messages: [] }),
+  clearMessages: () => set({ messages: [], isProcessing: false }),
   
   isProcessing: false,
   setIsProcessing: (isProcessing) => set({ isProcessing }),

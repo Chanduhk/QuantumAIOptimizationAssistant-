@@ -1,8 +1,8 @@
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -19,10 +19,21 @@ from backend.app.recommendation import RecommendationEngine
 from backend.app.services.behavior_engine import BehaviorIntelligenceEngine
 from backend.app.services.task_lifecycle_service import TaskLifecycleService
 from backend.app.ml.datasets import DatasetQualityAuditor, TaskCollectionReporter, TaskDataExtractor
+from backend.app.models.auth import User
+from backend.app.services.auth_service import (
+    clear_session_cookies,
+    enforce_authenticated_request,
+    get_current_user,
+    register_user,
+    authenticate_user,
+    revoke_session,
+    set_session_cookies,
+)
 app = FastAPI(
     title="Quantum Life AI Behavior Intelligence API",
     version="1.0.0",
     description="Behavior learning backend for the Quantum Life AI personal assistant.",
+    dependencies=[Depends(enforce_authenticated_request)],
 )
 
 origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173").split(",")
@@ -85,10 +96,13 @@ class MemorySearchRequest(BaseModel):
 
 
 class OrchestratorTaskInput(BaseModel):
+    id: Optional[int] = Field(default=None, ge=1)
     title: str = Field(..., min_length=1)
     type: str = Field(..., min_length=1)
     priority: int = Field(..., ge=1)
     duration: float = Field(..., gt=0)
+    estimated_duration_unit: Optional[Literal["minutes"]] = None
+    estimated_duration_source: Optional[str] = Field(default=None, min_length=1, max_length=100)
 
 
 class OrchestratorRunRequest(BaseModel):
@@ -128,7 +142,28 @@ class TaskCreateRequest(BaseModel):
     task_type: str = Field(..., min_length=1, max_length=100)
     priority: int = Field(default=3, ge=1, le=5)
     estimated_duration: float = Field(..., gt=0)
+    estimated_duration_unit: Literal["minutes"] = "minutes"
     created_at: Optional[datetime] = None
+
+
+class AuthenticationRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320)
+    password: str = Field(..., min_length=12, max_length=1024)
+
+
+class AuthenticatedUserResponse(BaseModel):
+    id: int
+    email: str
+    created_at: datetime
+
+
+class AuthSessionResponse(BaseModel):
+    user: AuthenticatedUserResponse
+    expires_at: datetime
+
+
+class LogoutResponse(BaseModel):
+    logged_out: bool
 
 
 class TaskStartRequest(BaseModel):
@@ -237,6 +272,56 @@ def startup() -> None:
     create_tables()
 
 
+def _auth_user_payload(user: User) -> AuthenticatedUserResponse:
+    return AuthenticatedUserResponse(id=user.id, email=user.email, created_at=user.created_at)
+
+
+@app.post("/api/v1/auth/register", response_model=AuthSessionResponse, status_code=201)
+def register_account(
+    request: AuthenticationRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> AuthSessionResponse:
+    credentials = register_user(db, request.email, request.password)
+    set_session_cookies(response, credentials)
+    return AuthSessionResponse(
+        user=_auth_user_payload(credentials.user),
+        expires_at=credentials.expires_at,
+    )
+
+
+@app.post("/api/v1/auth/login", response_model=AuthSessionResponse)
+def login_account(
+    request: AuthenticationRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> AuthSessionResponse:
+    credentials = authenticate_user(db, request.email, request.password)
+    set_session_cookies(response, credentials)
+    return AuthSessionResponse(
+        user=_auth_user_payload(credentials.user),
+        expires_at=credentials.expires_at,
+    )
+
+
+@app.get("/api/v1/auth/me", response_model=AuthenticatedUserResponse)
+def current_account(user: User = Depends(get_current_user)) -> AuthenticatedUserResponse:
+    return _auth_user_payload(user)
+
+
+@app.post("/api/v1/auth/logout", response_model=LogoutResponse)
+def logout_account(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LogoutResponse:
+    del user  # Authentication dependency enforces the active session.
+    revoke_session(request, db)
+    clear_session_cookies(response)
+    return LogoutResponse(logged_out=True)
+
+
 def _build_behavior_engine(session: Session) -> BehaviorIntelligenceEngine:
     return BehaviorIntelligenceEngine(session=session)
 
@@ -294,6 +379,8 @@ def create_task(
             task_type=request.task_type,
             priority=request.priority,
             estimated_duration=request.estimated_duration,
+            estimated_duration_unit=request.estimated_duration_unit,
+            estimated_duration_source="task_api",
             created_at=request.created_at,
         )
     except ValueError as exc:
@@ -712,12 +799,15 @@ def ai_train_rl(
 def ai_store_memory(
     request: MemoryStoreRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> MultiEngineResponse:
     brain = _build_brain(db)
     try:
+        metadata = dict(request.metadata)
+        metadata["user_id"] = user.id
         result = brain.store_memory(
             task_description=request.task_description,
-            metadata=request.metadata,
+            metadata=metadata,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -729,9 +819,10 @@ def ai_store_memory(
 def ai_search_memory(
     request: MemorySearchRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> MultiEngineResponse:
     brain = _build_brain(db)
-    result = brain.search_memory(query=request.query, limit=request.limit)
+    result = brain.search_memory(query=request.query, limit=request.limit, user_id=user.id)
     return MultiEngineResponse(result=result)
 
 
@@ -760,9 +851,12 @@ def list_tasks(
     user_id: int = Query(..., ge=1),
     db: Session = Depends(get_db),
 ) -> TaskListResponse:
-    brain = _build_brain(db)
-    tasks = brain.get_active_tasks(user_id=user_id)
-    return TaskListResponse(tasks=tasks)
+    from backend.app.services.task_lifecycle_service import TaskLifecycleService
+
+    svc = TaskLifecycleService(session=db)
+    all_tasks = svc.get_all_tasks(user_id=user_id)
+    serialized = [svc.serialize_task(t) for t in all_tasks]
+    return TaskListResponse(tasks=serialized)
 
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskResponse)

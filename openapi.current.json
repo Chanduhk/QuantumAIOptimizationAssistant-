@@ -1,0 +1,3245 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Quantum Life AI Behavior Intelligence API",
+    "description": "Behavior learning backend for the Quantum Life AI personal assistant.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "summary": "Register Account",
+        "operationId": "register_account_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthenticationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "summary": "Login Account",
+        "operationId": "login_account_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthenticationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "summary": "Current Account",
+        "operationId": "current_account_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatedUserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "summary": "Logout Account",
+        "operationId": "logout_account_api_v1_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks": {
+      "post": {
+        "summary": "Create Task",
+        "operationId": "create_task_api_v1_tasks_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "get": {
+        "summary": "List Tasks",
+        "operationId": "list_tasks_api_v1_tasks_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/start": {
+      "post": {
+        "summary": "Start Task",
+        "operationId": "start_task_api_v1_tasks__task_id__start_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          },
+          "404": {
+            "description": "Resource not found or not owned by the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/complete": {
+      "post": {
+        "summary": "Complete Task",
+        "operationId": "complete_task_api_v1_tasks__task_id__complete_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCompleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          },
+          "404": {
+            "description": "Resource not found or not owned by the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/ml-dataset/readiness": {
+      "get": {
+        "summary": "Get Task Dataset Readiness",
+        "operationId": "get_task_dataset_readiness_api_v1_tasks_ml_dataset_readiness_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/data-collection/status": {
+      "get": {
+        "summary": "Get Task Data Collection Status",
+        "operationId": "get_task_data_collection_status_api_v1_tasks_data_collection_status_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/behavior/train": {
+      "post": {
+        "summary": "Train Behavior Model",
+        "operationId": "train_behavior_model_api_v1_behavior_train_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/behavior/patterns/{user_id}": {
+      "get": {
+        "summary": "Get Behavior Patterns",
+        "operationId": "get_behavior_patterns_api_v1_behavior_patterns__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "days_back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3650,
+              "minimum": 1,
+              "default": 90,
+              "title": "Days Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatternsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/behavior/predict": {
+      "post": {
+        "summary": "Predict Behavior",
+        "operationId": "predict_behavior_api_v1_behavior_predict_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/behavior/report/{user_id}": {
+      "get": {
+        "summary": "Get Behavior Report",
+        "operationId": "get_behavior_report_api_v1_behavior_report__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "days_back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3650,
+              "minimum": 1,
+              "default": 90,
+              "title": "Days Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plan/generate": {
+      "post": {
+        "summary": "Generate Plan",
+        "operationId": "generate_plan_api_v1_plan_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrainTaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/run-orchestrator": {
+      "post": {
+        "summary": "Run Ai Orchestrator",
+        "operationId": "run_ai_orchestrator_api_v1_ai_run_orchestrator_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/run-decision-pipeline": {
+      "post": {
+        "summary": "Run Decision Pipeline",
+        "operationId": "run_decision_pipeline_api_v1_ai_run_decision_pipeline_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionPipelineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionPipelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/adaptive-schedule": {
+      "post": {
+        "summary": "Adaptive Schedule",
+        "operationId": "adaptive_schedule_api_v1_ai_adaptive_schedule_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdaptiveScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptiveScheduleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/run-learning-cycle": {
+      "post": {
+        "summary": "Run Learning Cycle",
+        "operationId": "run_learning_cycle_api_v1_ai_run_learning_cycle_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningCycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningCycleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/recommendations/{user_id}": {
+      "get": {
+        "summary": "Get Recommendations",
+        "operationId": "get_recommendations_api_v1_ai_recommendations__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "days_back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3650,
+              "minimum": 1,
+              "default": 90,
+              "title": "Days Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/command": {
+      "post": {
+        "summary": "Process Ai Command",
+        "operationId": "process_ai_command_api_v1_ai_command_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/schedule/optimize": {
+      "post": {
+        "summary": "Optimize Schedule",
+        "operationId": "optimize_schedule_api_v1_schedule_optimize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrainTaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/decision/prioritize": {
+      "post": {
+        "summary": "Prioritize Tasks",
+        "operationId": "prioritize_tasks_api_v1_decision_prioritize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrainTaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/predict/productivity": {
+      "get": {
+        "summary": "Predict Productivity",
+        "operationId": "predict_productivity_api_v1_predict_productivity_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "task_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Task Type"
+            }
+          },
+          {
+            "name": "duration",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "title": "Duration"
+            }
+          },
+          {
+            "name": "hour_of_day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 23,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hour Of Day"
+            }
+          },
+          {
+            "name": "days_back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3650,
+              "minimum": 1,
+              "default": 90,
+              "title": "Days Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/learn/update-model": {
+      "post": {
+        "summary": "Update Learning Model",
+        "operationId": "update_learning_model_api_v1_learn_update_model_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/plan-day": {
+      "post": {
+        "summary": "Ai Plan Day",
+        "operationId": "ai_plan_day_api_v1_ai_plan_day_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/optimize-schedule": {
+      "post": {
+        "summary": "Ai Optimize Schedule",
+        "operationId": "ai_optimize_schedule_api_v1_ai_optimize_schedule_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIPlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/train-rl": {
+      "post": {
+        "summary": "Ai Train Rl",
+        "operationId": "ai_train_rl_api_v1_ai_train_rl_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RLTrainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/memory/store": {
+      "post": {
+        "summary": "Ai Store Memory",
+        "operationId": "ai_store_memory_api_v1_ai_memory_store_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryStoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/memory/search": {
+      "post": {
+        "summary": "Ai Search Memory",
+        "operationId": "ai_search_memory_api_v1_ai_memory_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemorySearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/context": {
+      "get": {
+        "summary": "Ai Get Context",
+        "operationId": "ai_get_context_api_v1_ai_context_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "days_back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3650,
+              "minimum": 1,
+              "default": 90,
+              "title": "Days Back"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "get": {
+        "summary": "Get Task",
+        "operationId": "get_task_api_v1_tasks__task_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          },
+          "404": {
+            "description": "Resource not found or not owned by the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/executive-plan": {
+      "post": {
+        "summary": "Generate Executive Plan",
+        "operationId": "generate_executive_plan_api_v1_ai_executive_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutivePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiEngineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "Must match the heliox_csrf cookie for authenticated state-changing requests.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/system/health": {
+      "get": {
+        "summary": "Get System Health",
+        "operationId": "get_system_health_api_v1_system_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemHealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/status": {
+      "get": {
+        "summary": "Get System Status",
+        "operationId": "get_system_status_api_v1_system_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/quantum/status": {
+      "get": {
+        "summary": "Get Quantum Status",
+        "operationId": "get_quantum_status_api_v1_quantum_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuantumStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ml/model-status": {
+      "get": {
+        "summary": "Get Model Status",
+        "operationId": "get_model_status_api_v1_ml_model_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or session invalid/expired."
+          },
+          "403": {
+            "description": "CSRF validation failed or supplied user identity does not match the authenticated user."
+          }
+        },
+        "security": [
+          {
+            "HelioxSessionCookie": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AIPlanRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          },
+          "task_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Ids"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "AIPlanRequest"
+      },
+      "AdaptiveScheduleRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "schedule": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Schedule"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "schedule"
+        ],
+        "title": "AdaptiveScheduleRequest"
+      },
+      "AdaptiveScheduleResponse": {
+        "properties": {
+          "updated_schedule": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Updated Schedule"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_schedule",
+          "reason"
+        ],
+        "title": "AdaptiveScheduleResponse"
+      },
+      "AuthSessionResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/AuthenticatedUserResponse"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user",
+          "expires_at"
+        ],
+        "title": "AuthSessionResponse"
+      },
+      "AuthenticatedUserResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "created_at"
+        ],
+        "title": "AuthenticatedUserResponse"
+      },
+      "AuthenticationRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 12,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AuthenticationRequest"
+      },
+      "BrainTaskRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          },
+          "task_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Ids"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "BrainTaskRequest"
+      },
+      "CommandRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Command"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "command"
+        ],
+        "title": "CommandRequest"
+      },
+      "CommandResponse": {
+        "properties": {
+          "intent": {
+            "type": "string",
+            "title": "Intent"
+          },
+          "result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent",
+          "result"
+        ],
+        "title": "CommandResponse"
+      },
+      "DecisionPipelineRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Goal"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "goal"
+        ],
+        "title": "DecisionPipelineRequest"
+      },
+      "DecisionPipelineResponse": {
+        "properties": {
+          "tasks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "schedule": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Schedule"
+          },
+          "predictions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Predictions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tasks",
+          "schedule",
+          "predictions"
+        ],
+        "title": "DecisionPipelineResponse"
+      },
+      "ExecutivePlanRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/OrchestratorTaskInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Tasks"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "tasks"
+        ],
+        "title": "ExecutivePlanRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LearnRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "LearnRequest"
+      },
+      "LearningCycleRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "LearningCycleRequest"
+      },
+      "LearningCycleResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "new_model_version": {
+            "type": "string",
+            "title": "New Model Version"
+          },
+          "accuracy_improvement": {
+            "type": "number",
+            "title": "Accuracy Improvement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "new_model_version",
+          "accuracy_improvement"
+        ],
+        "title": "LearningCycleResponse"
+      },
+      "LogoutResponse": {
+        "properties": {
+          "logged_out": {
+            "type": "boolean",
+            "title": "Logged Out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "logged_out"
+        ],
+        "title": "LogoutResponse"
+      },
+      "MemorySearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Query"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "MemorySearchRequest"
+      },
+      "MemoryStoreRequest": {
+        "properties": {
+          "task_description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Task Description"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_description"
+        ],
+        "title": "MemoryStoreRequest"
+      },
+      "ModelStatusResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "in_memory_only": {
+            "type": "boolean",
+            "title": "In Memory Only"
+          },
+          "models_registered": {
+            "type": "integer",
+            "title": "Models Registered"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "in_memory_only",
+          "models_registered"
+        ],
+        "title": "ModelStatusResponse"
+      },
+      "MultiEngineResponse": {
+        "properties": {
+          "result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "title": "MultiEngineResponse"
+      },
+      "OrchestratorRunRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/OrchestratorTaskInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Tasks"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "update_learning": {
+            "type": "boolean",
+            "title": "Update Learning",
+            "default": false
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "tasks"
+        ],
+        "title": "OrchestratorRunRequest"
+      },
+      "OrchestratorTaskInput": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Title"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Type"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Priority"
+          },
+          "duration": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Duration"
+          },
+          "estimated_duration_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "minutes"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Unit"
+          },
+          "estimated_duration_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "type",
+          "priority",
+          "duration"
+        ],
+        "title": "OrchestratorTaskInput"
+      },
+      "PatternsResponse": {
+        "properties": {
+          "patterns": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Patterns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "patterns"
+        ],
+        "title": "PatternsResponse"
+      },
+      "PredictRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          },
+          "hour_of_day": {
+            "type": "integer",
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hour Of Day"
+          },
+          "task_type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Task Type"
+          },
+          "duration": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Duration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "hour_of_day",
+          "task_type",
+          "duration"
+        ],
+        "title": "PredictRequest"
+      },
+      "PredictResponse": {
+        "properties": {
+          "predicted_productivity": {
+            "type": "number",
+            "title": "Predicted Productivity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "predicted_productivity"
+        ],
+        "title": "PredictResponse"
+      },
+      "QuantumStatusResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
+          "qaoa_config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Qaoa Config"
+          },
+          "direct_execution_exposed": {
+            "type": "boolean",
+            "title": "Direct Execution Exposed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "config",
+          "qaoa_config",
+          "direct_execution_exposed"
+        ],
+        "title": "QuantumStatusResponse"
+      },
+      "RLTrainRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          },
+          "task_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Ids"
+          },
+          "episodes": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Episodes",
+            "default": 25
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "RLTrainRequest"
+      },
+      "RecommendationResponse": {
+        "properties": {
+          "focus_hours": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Focus Hours"
+          },
+          "task_ordering": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Task Ordering"
+          },
+          "schedule_improvements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Schedule Improvements"
+          },
+          "goal_progress_alerts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Goal Progress Alerts"
+          },
+          "behavioral_insights": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Behavioral Insights"
+          }
+        },
+        "type": "object",
+        "required": [
+          "focus_hours",
+          "task_ordering",
+          "schedule_improvements",
+          "goal_progress_alerts",
+          "behavioral_insights"
+        ],
+        "title": "RecommendationResponse"
+      },
+      "ReportResponse": {
+        "properties": {
+          "report": {
+            "type": "string",
+            "title": "Report"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report"
+        ],
+        "title": "ReportResponse"
+      },
+      "SystemHealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "database_connected": {
+            "type": "boolean",
+            "title": "Database Connected"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "database_connected",
+          "timestamp"
+        ],
+        "title": "SystemHealthResponse"
+      },
+      "SystemStatusResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "ai_metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ai Metrics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "ai_metrics"
+        ],
+        "title": "SystemStatusResponse"
+      },
+      "TaskCompleteRequest": {
+        "properties": {
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "actual_duration": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Duration"
+          }
+        },
+        "type": "object",
+        "title": "TaskCompleteRequest"
+      },
+      "TaskCreateRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "task_type": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Task Type"
+          },
+          "priority": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Priority",
+            "default": 3
+          },
+          "estimated_duration": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Estimated Duration"
+          },
+          "estimated_duration_unit": {
+            "type": "string",
+            "const": "minutes",
+            "title": "Estimated Duration Unit",
+            "default": "minutes"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "title",
+          "task_type",
+          "estimated_duration"
+        ],
+        "title": "TaskCreateRequest"
+      },
+      "TaskListResponse": {
+        "properties": {
+          "tasks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tasks"
+        ],
+        "title": "TaskListResponse"
+      },
+      "TaskResponse": {
+        "properties": {
+          "task": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Task"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "title": "TaskResponse"
+      },
+      "TaskStartRequest": {
+        "properties": {
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          }
+        },
+        "type": "object",
+        "title": "TaskStartRequest"
+      },
+      "TrainRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "User Id"
+          },
+          "days_back": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Days Back",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "TrainRequest"
+      },
+      "TrainResponse": {
+        "properties": {
+          "metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Metrics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metrics"
+        ],
+        "title": "TrainResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HelioxSessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "heliox_session",
+        "description": "Database-backed session cookie. The server sets it HttpOnly, SameSite=Lax, path=/api/v1; clients must not read or store it in JavaScript."
+      }
+    }
+  },
+  "x-heliox-security": {
+    "session_authentication": "Database-backed HttpOnly heliox_session cookie. Register, login, and system health are public; other /api/v1 operations require an active session.",
+    "csrf": {
+      "cookie": "heliox_csrf",
+      "header": "X-CSRF-Token",
+      "required_methods": [
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ],
+      "validation": "For authenticated state-changing requests, readable CSRF cookie and header must match and match the hash stored for the session.",
+      "public_exemptions": [
+        "POST /api/v1/auth/register",
+        "POST /api/v1/auth/login"
+      ]
+    },
+    "identity_scope": "Supplied user_id values are checked against the authenticated session identity.",
+    "task_ownership": "Task detail/start/complete path IDs are checked against authenticated task ownership; service paths also scope task access."
+  },
+  "x-heliox-optimization-boundary": {
+    "entrypoint": "POST /api/v1/ai/executive-plan",
+    "response": "Optimization evidence is returned through the typed response envelope with dynamic result details; this OpenAPI can describe only the declared envelope and does not invent internal result fields.",
+    "readiness": "Production optimization is fail-closed on validated task duration/provenance, complete eligible trained-model task-hour predictions, matrix validity, and non-triviality; unavailable evidence remains NOT_READY.",
+    "quantum": "The API exposes quantum status only. Direct QAOA execution is not exposed as an HTTP endpoint. The implemented solver is local software simulation; no physical hardware, quantum advantage, or speedup is claimed."
+  }
+}

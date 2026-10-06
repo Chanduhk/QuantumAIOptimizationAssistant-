@@ -33,6 +33,11 @@ def sample_tasks():
         'completion_time': np.random.uniform(0.7, 1.3, n_samples),
         'productivity_score': productivity,
     })
+    data.attrs.update({
+        "duration_unit": "minutes",
+        "dataset_schema_version": ProductivityModel.DATASET_SCHEMA_VERSION,
+        "target_schema_version": ProductivityModel.TARGET_SCHEMA_VERSION,
+    })
     return data
 
 class TestTaskTypes:
@@ -67,6 +72,11 @@ class TestTaskTypes:
             'productivity_score': [80, 80]
         })
         df = pd.concat([df, new_rows], ignore_index=True)
+        df.attrs.update({
+            "duration_unit": "minutes",
+            "dataset_schema_version": ProductivityModel.DATASET_SCHEMA_VERSION,
+            "target_schema_version": ProductivityModel.TARGET_SCHEMA_VERSION,
+        })
         model = ProductivityModel()
         model.train(df)
         assert 'other' in model.task_type_encoder.classes_
@@ -120,7 +130,7 @@ class TestFractionalHours:
         assert val == 10.75
 
     def test_schedule_end_arithmetic(self, optimization_engine):
-        tasks = [{'id': 1, 'scheduled_hour': 10.5, 'estimated_duration': 1.5, 'predicted_productivity': 80}]
+        tasks = [{'id': 1, 'scheduled_hour': 10.5, 'estimated_duration': 1.5, 'estimated_duration_unit': 'hours', 'estimated_duration_source': 'test_fixture', 'predicted_productivity': 80}]
         behavior = {'hourly_productivity': {10: 80, 11: 90}}
         res = optimization_engine.optimize_schedule(tasks, behavior)
         task = res['optimized_schedule'][0]

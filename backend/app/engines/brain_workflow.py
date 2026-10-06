@@ -179,10 +179,10 @@ class QuantumLifeBrain:
     def store_memory(self, task_description: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
         return self.memory_system.store_memory(task_description, metadata)
 
-    def search_memory(self, query: str, limit: int = 5) -> Dict[str, Any]:
+    def search_memory(self, query: str, limit: int = 5, *, user_id: int | None = None) -> Dict[str, Any]:
         return {
             "query": query,
-            "results": self.memory_system.search_similar_tasks(query, limit=limit),
+            "results": self.memory_system.search_similar_tasks(query, limit=limit, user_id=user_id),
         }
 
     def get_ai_context(

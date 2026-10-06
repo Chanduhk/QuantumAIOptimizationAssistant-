@@ -1,11 +1,42 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import { useToastStore } from '@/stores/toastStore';
 
-// Determine base URL, assuming backend runs on port 8000 locally if not in prod
+export type ApiErrorKind = 'authentication' | 'validation' | 'server' | 'network' | 'http';
+
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly kind: ApiErrorKind,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
+function detailMessage(detail: unknown): string | undefined {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail.flatMap((entry: unknown) => {
+      if (typeof entry !== 'object' || entry === null || !('msg' in entry)) return [];
+      const message = (entry as { msg?: unknown }).msg;
+      return typeof message === 'string' ? [message] : [];
+    });
+    return messages.length ? messages.join('; ') : undefined;
+  }
+  return undefined;
+}
+
+export function getApiErrorMessage(error: unknown, fallback = 'The request could not be completed.'): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+// Set VITE_API_URL when the frontend and API are hosted separately.
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const apiClient = axios.create({
   baseURL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -15,11 +46,13 @@ export const apiClient = axios.create({
 // Request Interceptor
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // We can add auth tokens here in future phases
-    // const token = localStorage.getItem('token');
-    // if (token) {
-    //   config.headers.Authorization = `Bearer ${token}`;
-    // }
+    if (!['get', 'head', 'options'].includes((config.method || 'get').toLowerCase())) {
+      const csrf = document.cookie
+        .split('; ')
+        .find((entry) => entry.startsWith('heliox_csrf='))
+        ?.slice('heliox_csrf='.length);
+      if (csrf) config.headers.set('X-CSRF-Token', decodeURIComponent(csrf));
+    }
     return config;
   },
   (error) => {
@@ -32,28 +65,48 @@ apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     return response;
   },
-  (error: AxiosError) => {
-    // Add centralized error handling
+  (error: AxiosError<unknown>) => {
     if (!error.response) {
+      const normalized = new ApiRequestError('Could not connect to the server. Check the API URL and your connection.', 'network');
       useToastStore.getState().addToast({
         type: 'error',
         title: 'Network Error',
-        message: 'Could not connect to the server. Please check your connection.',
+        message: normalized.message,
       });
+      return Promise.reject(normalized);
     } else {
       const status = error.response.status;
-      const data = error.response.data as any;
-      
-      // We don't want to show a toast for 404s on specific resources as they might be handled locally
+      const body = error.response.data;
+      const detail = typeof body === 'object' && body !== null && 'detail' in body
+        ? detailMessage((body as { detail?: unknown }).detail)
+        : undefined;
+      const kind: ApiErrorKind = status === 401 || status === 403
+        ? 'authentication'
+        : status === 422 || status === 400
+          ? 'validation'
+          : status >= 500
+            ? 'server'
+            : 'http';
+      const normalized = new ApiRequestError(
+        detail ?? (status === 401
+          ? 'Your session is no longer valid. Sign in again.'
+          : status === 403
+            ? 'You are not authorized to perform this action.'
+            : `Request failed (${status}).`),
+        kind,
+        status,
+      );
+      if (status === 401 && !error.config?.url?.endsWith('/auth/me') && !error.config?.url?.endsWith('/auth/login') && !error.config?.url?.endsWith('/auth/register')) {
+        window.dispatchEvent(new Event('heliox:unauthorized'));
+      }
       if (status >= 500) {
         useToastStore.getState().addToast({
           type: 'error',
           title: 'Server Error',
-          message: data?.detail || 'An unexpected error occurred on the server.',
+          message: normalized.message,
         });
       }
+      return Promise.reject(normalized);
     }
-    
-    return Promise.reject(error);
   }
 );

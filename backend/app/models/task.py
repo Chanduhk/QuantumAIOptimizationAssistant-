@@ -17,6 +17,8 @@ class Task(Base):
     created_at = Column(DateTime, nullable=True, index=True)
     lifecycle_state = Column(String(32), nullable=True, index=True)
     estimated_duration = Column(Float, nullable=True)
+    estimated_duration_unit = Column(String(16), nullable=True)
+    estimated_duration_source = Column(String(64), nullable=True)
     actual_duration = Column(Float, nullable=True)
     start_time = Column(DateTime, nullable=True, index=True)
     end_time = Column(DateTime, nullable=True)

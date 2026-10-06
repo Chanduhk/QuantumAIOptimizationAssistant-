@@ -71,6 +71,7 @@ class ExecutiveCognitiveBrain:
         "governance_policy_compliance",
         "governance_violations",
         "executive_governance_score",
+        "optimization_evidence",
     }
     QUANTUM_OUTPUT_KEYS = {
         "executive_quantum_summary",
@@ -174,6 +175,7 @@ class ExecutiveCognitiveBrain:
         query: str | None = None,
         quantum_result: Any | None = None,
         intelligence_context: Any | None = None,
+        optimization_evidence: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Execute the executive coordination pipeline and return one result object."""
         task_list = self._task_list(tasks)
@@ -192,7 +194,12 @@ class ExecutiveCognitiveBrain:
                 if hasattr(intelligence_context, "to_executive_format")
                 else intelligence_context
             )
-            
+        if optimization_evidence is not None:
+            if not isinstance(optimization_evidence, dict):
+                raise ValueError("optimization_evidence must be a dictionary")
+            # Typed comparison evidence is context; executive reasoning retains decision authority.
+            executive_context["optimization_evidence"] = optimization_evidence
+
         executive_objectives = self._understand_objectives(task_list, goals)
         decision_state = self._evaluate_current_situation(task_list, behavior_patterns)
         candidate_plans = self._build_candidate_plans(decision_state["recommended_task_order"], behavior_patterns)
@@ -292,6 +299,7 @@ class ExecutiveCognitiveBrain:
             **governance_outputs,
             **quantum_outputs,
         }
+        result["optimization_evidence"] = optimization_evidence or {}
         self._validate_executive_result(result)
         self.latest_result = result
         return result

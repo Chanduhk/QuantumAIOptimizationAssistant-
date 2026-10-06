@@ -69,7 +69,9 @@ class AIInteractionLayer:
             return "optimize_schedule"
         if any(keyword in normalized for keyword in ("plan", "plan my day", "organize my day")):
             return "plan_day"
-        return "plan_day"
+        # Do not silently treat open-ended conversation as a planning request.
+        # The controller rejects this intent until a general chat provider exists.
+        return "general_question"
 
     def parse_command(self, command: str) -> Dict[str, Any]:
         """Extract goal, task types, and time references from a command."""

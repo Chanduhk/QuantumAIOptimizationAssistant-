@@ -13,6 +13,7 @@ from backend.app.ml.datasets import TaskDataExtractor
 from backend.app.models.base import Base
 from backend.app.models.behavior_data import BehaviorData as _BehaviorData
 from backend.app.models.task import Task
+from backend.app.services.auth_service import CSRF_COOKIE
 from backend.app.services.task_lifecycle_service import TaskLifecycleService
 from backend.main import app
 
@@ -336,8 +337,10 @@ def test_old_schema_is_extended_without_resetting_existing_rows():
     columns = {column["name"] for column in inspect(engine).get_columns("tasks")}
     count = session.execute(text("SELECT COUNT(*) FROM tasks")).scalar_one()
 
-    assert {"created_at", "lifecycle_state", "outcome_valid"}.issubset(columns)
+    assert {"created_at", "lifecycle_state", "outcome_valid", "estimated_duration_unit", "estimated_duration_source"}.issubset(columns)
     assert count == 1
+    legacy = session.execute(text("SELECT estimated_duration_unit, estimated_duration_source FROM tasks WHERE id = 1")).one()
+    assert legacy == (None, None)
 
 
 def test_api_lifecycle_flow_uses_isolated_test_database():
@@ -352,10 +355,23 @@ def test_api_lifecycle_flow_uses_isolated_test_database():
     app.dependency_overrides[get_db] = override_db
     try:
         client = TestClient(app)
+        registration = client.post(
+            "/api/v1/auth/register",
+            json={"email": "lifecycle-test@example.com", "password": "test-only password 123"},
+        )
+        assert registration.status_code == 201
+        user_id = registration.json()["user"]["id"]
+        assert client.get("/api/v1/auth/me").json()["id"] == user_id
+
+        csrf_token = client.cookies.get(CSRF_COOKIE)
+        assert csrf_token
+        headers = {"X-CSRF-Token": csrf_token}
+
         create_response = client.post(
             "/api/v1/tasks",
+            headers=headers,
             json={
-                "user_id": 1,
+                "user_id": user_id,
                 "title": "private api task",
                 "task_type": "focus",
                 "priority": 3,
@@ -368,17 +384,22 @@ def test_api_lifecycle_flow_uses_isolated_test_database():
 
         start_response = client.post(
             f"/api/v1/tasks/{task_id}/start",
-            json={"user_id": 1, "started_at": (BASE + timedelta(minutes=5)).isoformat()},
+            headers=headers,
+            json={"started_at": (BASE + timedelta(minutes=5)).isoformat()},
         )
         assert start_response.status_code == 200
 
         complete_response = client.post(
             f"/api/v1/tasks/{task_id}/complete",
-            json={"user_id": 1, "completed_at": (BASE + timedelta(minutes=65)).isoformat()},
+            headers=headers,
+            json={"completed_at": (BASE + timedelta(minutes=65)).isoformat()},
         )
         assert complete_response.status_code == 200
+        completed_task = complete_response.json()["result"]["task"]
+        assert completed_task["completed"] is True
+        assert completed_task["actual_duration"] == 60.0
 
-        readiness = client.get("/api/v1/tasks/ml-dataset/readiness?user_id=1")
+        readiness = client.get(f"/api/v1/tasks/ml-dataset/readiness?user_id={user_id}")
         assert readiness.status_code == 200
         report = readiness.json()["result"]["adapter_report"]
         assert report["eligible_records"] == 1

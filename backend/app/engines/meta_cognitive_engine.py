@@ -337,15 +337,15 @@ class MetaCognitiveEngine:
 
     def _hour(self, value: Any, field_name: str) -> int:
         if isinstance(value, bool):
-            raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
         if isinstance(value, int):
             hour = value
         elif isinstance(value, str) and value.strip().isdigit():
             hour = int(value.strip())
         else:
-            raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
         if not 0 <= hour <= 23:
-            raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
         return hour
 
     def _error_score(self, prediction: Any, actual_result: Any) -> float:

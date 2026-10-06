@@ -11,7 +11,7 @@ def engine() -> SchedulingEngine:
 
 
 def test_generates_schedule_by_ranked_productivity_hours(engine: SchedulingEngine) -> None:
-    tasks = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    tasks = [{"id": "a", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "b", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "c", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}]
     patterns = {"hourly_productivity": {9: 90, 10: 80, 8: 50}}
 
     result = engine.optimize_schedule(tasks, patterns, day_start=8, day_end=10)
@@ -25,7 +25,7 @@ def test_generates_schedule_by_ranked_productivity_hours(engine: SchedulingEngin
 
 
 def test_focus_hours_are_used_when_productivity_map_is_missing(engine: SchedulingEngine) -> None:
-    tasks = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    tasks = [{"id": "a", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "b", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "c", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}]
 
     result = engine.optimize_schedule(tasks, {"best_focus_hours": [11, 9]}, day_start=8, day_end=12)
     by_id = {task["id"]: task for task in result}
@@ -40,7 +40,7 @@ def test_empty_task_list_returns_empty_schedule(engine: SchedulingEngine) -> Non
 
 
 def test_duplicate_productivity_scores_keep_stable_hour_order(engine: SchedulingEngine) -> None:
-    tasks = [{"id": "a"}, {"id": "b"}]
+    tasks = [{"id": "a", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "b", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}]
     patterns = {"hourly_productivity": {9: 50, 10: 50}}
 
     result = engine.optimize_schedule(tasks, patterns, day_start=9, day_end=10)
@@ -51,7 +51,7 @@ def test_duplicate_productivity_scores_keep_stable_hour_order(engine: Scheduling
 
 
 def test_missing_productivity_map_falls_back_to_day_range(engine: SchedulingEngine) -> None:
-    tasks = [{"id": "a"}, {"id": "b"}]
+    tasks = [{"id": "a", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "b", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}]
 
     result = engine.optimize_schedule(tasks, {}, day_start=6, day_end=7)
 
@@ -60,7 +60,7 @@ def test_missing_productivity_map_falls_back_to_day_range(engine: SchedulingEngi
 
 
 def test_string_hour_keys_match_integer_key_behavior(engine: SchedulingEngine) -> None:
-    tasks = [{"id": "a"}, {"id": "b"}]
+    tasks = [{"id": "a", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "b", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}]
     string_patterns = {"hourly_productivity": {"10": 10, "9": 90}}
     integer_patterns = {"hourly_productivity": {10: 10, 9: 90}}
 
@@ -73,7 +73,7 @@ def test_string_hour_keys_match_integer_key_behavior(engine: SchedulingEngine) -
 
 def test_schedule_beyond_day_end_adds_warning_fields(engine: SchedulingEngine) -> None:
     result = engine.optimize_schedule(
-        [{"id": "a", "estimated_duration": 3}],
+        [{"id": "a", "estimated_duration": 3, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}],
         {"hourly_productivity": {9: 90}},
         day_start=8,
         day_end=10,
@@ -88,7 +88,7 @@ def test_schedule_beyond_day_end_adds_warning_fields(engine: SchedulingEngine) -
 
 def test_schedule_within_day_end_does_not_add_warning_fields(engine: SchedulingEngine) -> None:
     result = engine.optimize_schedule(
-        [{"id": "a", "estimated_duration": 1}],
+        [{"id": "a", "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"}],
         {"hourly_productivity": {9: 90}},
         day_start=8,
         day_end=10,
@@ -99,7 +99,7 @@ def test_schedule_within_day_end_does_not_add_warning_fields(engine: SchedulingE
 
 
 def test_large_task_count_is_deterministic_and_preserves_schema(engine: SchedulingEngine) -> None:
-    tasks = [{"id": f"task-{index}", "estimated_duration": 1} for index in range(100)]
+    tasks = [{"id": f"task-{index}", "estimated_duration": 1, "estimated_duration_unit": "hours", "estimated_duration_source": "test_fixture"} for index in range(100)]
     patterns = {"hourly_productivity": {hour: hour for hour in range(8, 20)}}
 
     first = engine.optimize_schedule(tasks, patterns, day_start=8, day_end=20)
@@ -113,7 +113,7 @@ def test_large_task_count_is_deterministic_and_preserves_schema(engine: Scheduli
 
 
 def test_scheduling_is_deterministic(engine: SchedulingEngine) -> None:
-    tasks = [{"id": "a"}, {"id": "b"}]
+    tasks = [{"id": "a", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "b", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}]
     patterns = {"hourly_productivity": {9: 60, 10: 50}, "best_focus_hours": [8]}
 
     first = engine.optimize_schedule(tasks, patterns, day_start=8, day_end=10)
@@ -139,7 +139,7 @@ def test_rejects_invalid_inputs(engine: SchedulingEngine) -> None:
         engine.optimize_schedule([], {}, day_start=10, day_end=8)
 
     with pytest.raises(ValueError, match="Each task must be a dictionary"):
-        engine.optimize_schedule([{"id": "valid"}, None], {}, day_start=8, day_end=10)
+        engine.optimize_schedule([{"id": "valid", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, None], {}, day_start=8, day_end=10)
 
 
 @pytest.mark.parametrize(
@@ -148,17 +148,16 @@ def test_rejects_invalid_inputs(engine: SchedulingEngine) -> None:
 )
 def test_rejects_invalid_duration_values(engine: SchedulingEngine, duration: object) -> None:
     with pytest.raises(ValueError):
-        engine.optimize_schedule([{"id": "a", "estimated_duration": duration}], {}, day_start=8, day_end=10)
+        engine.optimize_schedule([{"id": "a", "estimated_duration": duration, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}], {}, day_start=8, day_end=10)
 
 
-def test_accepts_actual_duration_when_estimated_duration_is_missing(engine: SchedulingEngine) -> None:
-    result = engine.optimize_schedule([{"id": "a", "actual_duration": 1.5}], {}, day_start=8, day_end=10)
-
-    assert result[0]["scheduled_end_hour"] == 9.5
+def test_actual_duration_is_not_used_as_a_forward_estimate(engine: SchedulingEngine) -> None:
+    with pytest.raises(ValueError, match="estimated_duration is required"):
+        engine.optimize_schedule([{"id": "a", "actual_duration": 1.5}], {}, day_start=8, day_end=10)
 
 
 def test_missing_productivity_map_and_focus_hours_still_schedule(engine: SchedulingEngine) -> None:
-    result = engine.optimize_schedule([{"id": "a"}, {"id": "b"}], {}, day_start=8, day_end=10)
+    result = engine.optimize_schedule([{"id": "a", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}, {"id": "b", "estimated_duration": 60, "estimated_duration_unit": "minutes", "estimated_duration_source": "test_fixture"}], {}, day_start=8, day_end=10)
 
     assert [task["scheduled_hour"] for task in result] == [8, 9]
     assert [task["schedule_score"] for task in result] == [0.0, 0.0]

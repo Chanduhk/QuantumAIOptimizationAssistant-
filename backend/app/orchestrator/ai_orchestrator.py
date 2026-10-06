@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from backend.app.ai_rl import RLScheduler
+from backend.app.domain.optimization_input_contract import adapt_task_for_optimization
+from backend.app.domain.prediction_matrix import build_prediction_matrix
 from backend.app.cognitive import CognitiveEngine
 from backend.app.engines.adaptive_life_operating_system import AdaptiveLifeOperatingSystem
 from backend.app.engines.autonomous_planning_engine import AutonomousPlanningEngine
@@ -191,6 +193,7 @@ class AIOrchestrator:
             behavior_patterns,
         )
         self._validate_optimization_result(optimization_result)
+        classical_candidate = self._build_classical_candidate(normalized_tasks)
         self.ai_monitor.log_engine_execution(
             "OptimizationEngine",
             self._duration_since(optimization_started),
@@ -223,6 +226,7 @@ class AIOrchestrator:
             "daily_plan": daily_plan,
             "rl_schedule": rl_result["optimized_schedule"],
             "optimized_schedule": optimization_result["optimized_schedule"],
+            "classical_candidate": classical_candidate,
             "memory_event": memory_event,
             "learning_update": learning_update,
             "system_metrics": system_metrics,
@@ -279,15 +283,127 @@ class AIOrchestrator:
         normalized_tasks = self._normalize_tasks(tasks)
         patterns = behavior_patterns if behavior_patterns is not None else self._load_behavior_patterns(user_id=user_id, days_back=None)
         self._validate_behavior_patterns(patterns)
+        optimization_evidence = self._build_hybrid_optimization_evidence(normalized_tasks, user_id=user_id)
         result = self.executive_cognitive_brain.execute_planning_request(
             normalized_tasks,
             user_id=user_id,
             behavior_patterns=patterns,
             goals=goals or [],
             query=query,
+            optimization_evidence=optimization_evidence,
         )
         self._validate_executive_brain_result(result)
         return result
+
+    def _build_hybrid_optimization_evidence(
+        self, tasks: List[Dict[str, Any]], *, user_id: int | None = None
+    ) -> Dict[str, Any]:
+        """Build production candidates from real model evidence or report the gate."""
+        from backend.app.domain.assignment_qubo_ising import AssignmentQuboIsingBuilder
+        from backend.app.domain.classical_optimizer import ClassicalOptimizer
+        from backend.app.domain.hybrid_comparison import HybridComparator
+        from backend.app.domain.quantum_suitability import QuantumSuitabilityAnalyzer
+
+        analyzer = QuantumSuitabilityAnalyzer()
+        comparator = HybridComparator()
+        matrix = classical = formulation = None
+        matrix_status = "NOT_READY"
+        nontriviality_status = "NOT_PROVEN"
+        try:
+            self._ensure_optimization_model_ready(user_id=user_id)
+            optimization_tasks = tuple(
+                self._adapt_task_for_optimization(task)
+                for task in tasks
+            )
+            matrix = build_prediction_matrix(
+                self.prediction_engine,
+                self.behavior_engine,
+                optimization_tasks,
+                tuple(getattr(self.rl_scheduler, "available_actions", ())),
+            )
+            matrix_status = "COMPLETE"
+            nontriviality_status = matrix.nontriviality
+            if matrix.nontriviality != "PASS":
+                suitability = analyzer.assess(matrix, None, None)
+            else:
+                classical = ClassicalOptimizer().optimize(matrix)
+                formulation = AssignmentQuboIsingBuilder().build(matrix)
+                suitability = analyzer.assess(matrix, classical, formulation)
+        except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+            from backend.app.domain.quantum_suitability import QuantumSuitabilityResult
+
+            suitability = QuantumSuitabilityResult(
+                status="NOT_READY", mode="PRODUCTION",
+                reasons=(f"production prediction matrix unavailable: {exc}",),
+            )
+        if suitability.status == "SUITABLE":
+            quantum = self.optimization_engine.run_qaoa_candidate(formulation, matrix)
+        else:
+            quantum = {
+                "status": suitability.status,
+                "mode": "PRODUCTION",
+                "candidate": None,
+                "reason": "; ".join(suitability.reasons),
+                "fallback": False,
+            }
+        comparison = comparator.compare(matrix, classical, quantum, formulation=formulation)
+        return {
+            "mode": "PRODUCTION",
+            "prediction_matrix_status": matrix_status,
+            "nontriviality_status": nontriviality_status,
+            "quantum_suitability": suitability.to_dict(),
+            "quantum_candidate": quantum,
+            "hybrid_comparison": comparison.to_dict(),
+            "executive_decision_authority": "Executive Cognitive Brain",
+        }
+
+    @staticmethod
+    def _adapt_task_for_optimization(task: Dict[str, Any]) -> Any:
+        """Adapt using explicit caller provenance, never transient defaults."""
+        original = task.get("original_payload")
+        source = original if isinstance(original, dict) else task
+        return adapt_task_for_optimization(
+            task,
+            estimated_duration_unit=source.get("estimated_duration_unit"),
+            duration_source=source.get("estimated_duration_source"),
+        )
+
+    def _ensure_optimization_model_ready(self, *, user_id: int | None = None) -> Any:
+        """Train the versioned model only from the existing eligible real-history builder."""
+        behavior = self.behavior_engine
+        model = getattr(behavior, "productivity_model", None)
+        if user_id is not None and (
+            getattr(behavior, "active_user_id", None) != user_id
+            or (getattr(model, "is_trained", None) is not True and getattr(getattr(behavior, "raw_tasks_df", None), "empty", True))
+        ):
+            behavior.collect_behavior_data(user_id=user_id, days_back=self.days_back)
+            model = getattr(behavior, "productivity_model", None)
+        if model is None:
+            raise ValueError("productivity model is unavailable")
+        if getattr(model, "is_trained", None) is not True:
+            build_frame = getattr(behavior, "_build_training_frame", None)
+            train_model = getattr(behavior, "train_productivity_model", None)
+            if not callable(build_frame) or not callable(train_model):
+                raise ValueError("real eligible training-data builder is unavailable")
+            training_frame = build_frame()
+            sample_count = len(training_frame)
+            if sample_count < 5:
+                raise ValueError(
+                    f"insufficient eligible real training history: {sample_count}/5 completed tasks"
+                )
+            train_model()
+            model = getattr(behavior, "productivity_model", None)
+        metadata = getattr(model, "metadata", None)
+        sample_count = metadata.get("training_sample_count") if isinstance(metadata, dict) else None
+        if (
+            getattr(model, "is_trained", None) is not True
+            or getattr(model, "compatibility_status", None) != "OPTIMIZATION_COMPATIBLE"
+            or isinstance(sample_count, bool)
+            or not isinstance(sample_count, int)
+            or sample_count < 5
+        ):
+            raise ValueError("versioned productivity model lacks verified compatible training evidence")
+        return model
 
     def generate_daily_plan(
         self,
@@ -389,6 +505,37 @@ class AIOrchestrator:
             "results": results[:limit],
         }
 
+    def _build_classical_candidate(self, tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Run the new candidate path only from a validated real prediction matrix."""
+        optimize_matrix = getattr(self.optimization_engine, "optimize_prediction_matrix", None)
+        if not callable(optimize_matrix):
+            return {
+                "status": "NOT_READY",
+                "candidate": None,
+                "mode": "PRODUCTION",
+                "reason": "classical prediction-matrix optimizer is unavailable",
+            }
+
+        try:
+            self._ensure_optimization_model_ready()
+            optimization_tasks = tuple(
+                self._adapt_task_for_optimization(task)
+                for task in tasks
+            )
+            candidate_hours = tuple(getattr(self.rl_scheduler, "available_actions", ()))
+            matrix = build_prediction_matrix(
+                self.prediction_engine,
+                self.behavior_engine,
+                optimization_tasks,
+                candidate_hours,
+            )
+            return optimize_matrix(matrix)
+        except (AttributeError, TypeError, ValueError) as exc:
+            return optimize_matrix(
+                None,
+                unavailable_reason=f"production prediction matrix is not ready ({type(exc).__name__})",
+            )
+
     def _normalize_tasks(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not isinstance(tasks, list):
             raise ValueError("tasks must be a non-empty list of dictionaries.")
@@ -415,7 +562,7 @@ class AIOrchestrator:
             priority = self._positive_integer(task.get("priority", 1), field_name="priority")
             normalized_tasks.append(
                 {
-                    "id": f"input-{index}",
+                    "id": task.get("id", f"input-{index}"),
                     "original_task_id": task.get("id"),
                     "goal_id": task.get("goal_id"),
                     "depends_on_task_ids": task.get("depends_on_task_ids", task.get("dependencies", [])),
@@ -424,6 +571,13 @@ class AIOrchestrator:
                     "task_type": task_type,
                     "priority": priority,
                     "estimated_duration": duration,
+                    # Preserve the existing normalized values for general planning
+                    # and legacy prediction. Optimizer adapters must read explicit
+                    # provenance from original_payload instead of these fallbacks.
+                    "estimated_duration_unit": task.get("estimated_duration_unit") or "minutes",
+                    "estimated_duration_source": task.get("estimated_duration_source") or "transient_request",
+                    "lifecycle_state": "created",
+                    "outcome_valid": None,
                     "actual_duration": None,
                     "start_time": None,
                     "end_time": None,
@@ -744,6 +898,7 @@ class AIOrchestrator:
             "reflection",
         }
         optional_keys = {
+            "optimization_evidence",
             "executive_reasoning",
             "executive_confidence",
             "executive_tradeoffs",
@@ -998,15 +1153,15 @@ class AIOrchestrator:
 
     def _resolve_hour(self, value: Any, *, field_name: str) -> int:
         if isinstance(value, bool):
-            raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
         if isinstance(value, int):
             hour = value
         elif isinstance(value, str) and value.strip().isdigit():
             hour = int(value.strip())
         else:
-            raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
         if not 0 <= hour <= 23:
-            raise ValueError(f"{field_name} must be an integer hour from 0 to 23.")
+            raise ValueError(f"{field_name} must be an hour from 0 to 24.")
         return hour
 
     def _positive_integer(self, value: Any, *, field_name: str) -> int:

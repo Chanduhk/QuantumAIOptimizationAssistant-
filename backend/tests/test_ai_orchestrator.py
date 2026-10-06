@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.app.domain.optimization_input_contract import OptimizationInputError, adapt_task_for_optimization
 from backend.app.models.base import Base
 from backend.app.models.task import Task
 from backend.app.orchestrator.ai_orchestrator import AIOrchestrator
@@ -244,7 +245,14 @@ class TestAIOrchestrator(unittest.TestCase):
         self.assertEqual(normalized[0]["id"], "input-1")
         self.assertEqual(normalized[0]["task_type"], "writing")
         self.assertEqual(normalized[0]["estimated_duration"], 120.0)
+        self.assertEqual(normalized[0]["estimated_duration_unit"], "minutes")
+        self.assertEqual(normalized[0]["estimated_duration_source"], "transient_request")
         self.assertEqual(normalized[0]["source"], "transient_request")
+        optimization_input = dict(normalized[0])
+        optimization_input["priority"] = 3
+        with self.assertRaises(OptimizationInputError) as raised:
+            self.orchestrator._adapt_task_for_optimization(optimization_input)
+        self.assertEqual(raised.exception.code, "LEGACY_UNTYPED_DURATION")
 
     def test_process_tasks_returns_expected_contract(self) -> None:
         result = self.orchestrator.process_tasks(
@@ -271,6 +279,8 @@ class TestAIOrchestrator(unittest.TestCase):
         self.assertIn("daily_plan", result)
         self.assertIn("rl_schedule", result)
         self.assertIn("optimized_schedule", result)
+        self.assertEqual(result["classical_candidate"]["status"], "NOT_READY")
+        self.assertIsNone(result["classical_candidate"]["candidate"])
         self.assertIn("memory_event", result)
         self.assertIsNone(result["learning_update"])
         self.assertEqual(len(result["predicted_tasks"]), 2)

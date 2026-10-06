@@ -117,6 +117,12 @@ class AIBrainController:
 
     async def _route_and_execute(self, request: BrainRequest, trace: BrainExecutionTrace) -> BrainResponse:
         """Internal routing logic mapping intents to pipelines."""
+        if request.intent == "general_question":
+            raise ValueError(
+                "Open-ended JAM chat is not available yet. Supported commands include planning, "
+                "schedule optimization, recommendations, productivity analysis, and model learning."
+            )
+
         if request.intent == "plan_day":
             return await self._execute_central_planning(request, trace)
 

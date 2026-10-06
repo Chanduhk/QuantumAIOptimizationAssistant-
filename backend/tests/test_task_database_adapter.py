@@ -34,6 +34,8 @@ def make_task(
         task_type=task_type,
         priority=priority,
         estimated_duration=estimate,
+        estimated_duration_unit="minutes",
+        estimated_duration_source="test_fixture",
         actual_duration=actual,
         start_time=None if start_offset is None else BASE + timedelta(minutes=start_offset),
         end_time=None if end_offset is None else BASE + timedelta(minutes=end_offset),
@@ -63,6 +65,18 @@ def test_empty_database_reports_zero_without_fabricating_events():
     assert result.report.generated_event_count == 0
     assert result.dataset_build.rows == ()
     assert result.report.no_real_training_samples_available is True
+
+
+def test_legacy_untyped_estimate_is_rejected_without_unit_inference():
+    task = make_task(1)
+    task.estimated_duration_unit = None
+    task.estimated_duration_source = None
+
+    result = extract([task])
+
+    assert result.report.eligible_records == 0
+    assert result.dataset_build.rows == ()
+    assert any("unit/source is unknown" in reason for reason in result.report.rejection_reason_counts)
 
 
 def test_valid_completed_task_maps_to_f3_events_and_dataset_row():

@@ -21,7 +21,10 @@ class ContextEngine:
     ) -> Dict[str, Any]:
         current_hour = datetime.now().hour
         memory_context = self.memory_system.retrieve_context(user_id=user_id)
-        semantic_matches = self.memory_system.search_similar_tasks(query, limit=5) if query else []
+        semantic_matches = (
+            self.memory_system.search_similar_tasks(query, limit=5, user_id=user_id)
+            if query else []
+        )
 
         return {
             "user_id": user_id,

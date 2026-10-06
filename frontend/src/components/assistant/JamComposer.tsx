@@ -43,7 +43,7 @@ export function JamComposer({ onSend, isProcessing }: JamComposerProps) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Type a command or ask a question..."
+        placeholder="Try: plan my day, get recommendations, analyze my productivity..."
         className="w-full max-h-[200px] bg-transparent text-[var(--color-text)] placeholder-[var(--color-text-muted)] border-none focus:outline-none focus:ring-0 resize-none py-3 px-4 min-h-[48px]"
         rows={1}
         disabled={isProcessing}

@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
+from backend.app.domain.optimization_input_contract import DurationValue, normalize_duration
+from backend.app.domain.prediction_provenance import PredictionResult, PredictionStatus
 from backend.app.services.behavior_engine import BehaviorIntelligenceEngine
 
 
@@ -61,6 +63,175 @@ class PredictionEngine:
             self._predict_with_index(behavior_engine, task, behavior_patterns, index)
             for index, task in enumerate(tasks)
         ]
+
+    def predict_task_hour_with_provenance(
+        self,
+        behavior_engine: BehaviorIntelligenceEngine,
+        *,
+        task_id: int | str,
+        candidate_start_hour: int,
+        task_type: str,
+        duration: DurationValue,
+    ) -> PredictionResult:
+        """Return a task/hour prediction with provenance without changing legacy APIs.
+
+        A trained legacy ProductivityModel is explicitly marked ineligible for
+        optimizer use because its training/inference duration feature units are
+        not verified. No model version is synthesized.
+        """
+
+        def result(
+            status: PredictionStatus,
+            *,
+            value: float | None = None,
+            model_trained: bool | None = None,
+            history_count: int | None = None,
+            history_count_status: str = "UNAVAILABLE",
+            fallback_used: bool = False,
+            duration_input: DurationValue | None = None,
+            reason: str | None = None,
+            model_version: str | None = None,
+            feature_schema_version: str | None = None,
+            target_schema_version: str | None = None,
+            model_version_status: str = "MODEL_VERSION_NOT_AVAILABLE",
+            optimizer_eligibility: str | None = None,
+        ) -> PredictionResult:
+            if optimizer_eligibility is not None:
+                eligible = optimizer_eligibility
+            elif status is PredictionStatus.TRAINED_MODEL:
+                eligible = "MODEL_FEATURE_UNIT_UNVERIFIED"
+            elif status is PredictionStatus.COLD_START_HEURISTIC:
+                eligible = "COLD_START_NOT_ELIGIBLE"
+            else:
+                eligible = status.value
+            return PredictionResult(
+                task_id=task_id,
+                candidate_start_hour=candidate_start_hour,
+                value=value,
+                score_unit="productivity_points",
+                prediction_source=status,
+                model_trained=model_trained,
+                history_count=history_count,
+                history_count_status=history_count_status,
+                model_version=model_version,
+                model_version_status=model_version_status,
+                feature_schema_version=feature_schema_version,
+                target_schema_version=target_schema_version,
+                fallback_used=fallback_used,
+                duration_input=duration_input,
+                validity=status in {PredictionStatus.TRAINED_MODEL, PredictionStatus.COLD_START_HEURISTIC},
+                status=status,
+                optimizer_eligibility=eligible,
+                reason=reason,
+            )
+
+        if (
+            isinstance(candidate_start_hour, bool)
+            or not isinstance(candidate_start_hour, int)
+            or not 6 <= candidate_start_hour <= 22
+        ):
+            raise ValueError("candidate_start_hour must be an integer in the RL action domain 6..22.")
+        if isinstance(task_id, bool) or not isinstance(task_id, (int, str)) or not str(task_id).strip():
+            raise ValueError("task_id must be a non-empty stable integer or string.")
+        if isinstance(task_id, int) and task_id <= 0:
+            raise ValueError("integer task_id must be positive.")
+        if not isinstance(task_type, str) or not task_type.strip():
+            return result(PredictionStatus.INVALID_INPUT, reason="task_type must be non-empty.")
+        if not isinstance(duration, DurationValue) or not duration.optimizer_eligible:
+            return result(PredictionStatus.INVALID_INPUT, reason="duration must have known-unit normalized provenance.")
+        if behavior_engine is None:
+            return result(PredictionStatus.UNAVAILABLE, reason="behavior engine is unavailable.", duration_input=duration)
+
+        model = getattr(behavior_engine, "productivity_model", None)
+        trained_before = getattr(model, "is_trained", None)
+        if not isinstance(trained_before, bool):
+            return result(PredictionStatus.UNAVAILABLE, reason="model training state is unavailable.", duration_input=duration)
+
+        try:
+            raw_value = behavior_engine.predict_task_productivity(
+                hour_of_day=candidate_start_hour,
+                task_type=task_type.strip(),
+                duration=duration.normalized_hours,
+            )
+        except (AttributeError, ValueError, TypeError) as exc:
+            return result(
+                PredictionStatus.UNAVAILABLE,
+                model_trained=bool(getattr(model, "is_trained", False)),
+                duration_input=duration,
+                reason=f"prediction unavailable: {type(exc).__name__}.",
+            )
+
+        trained_after = getattr(model, "is_trained", None)
+        if trained_after is True:
+            try:
+                prediction = self._normalize_prediction(raw_value)
+            except ValueError:
+                return result(
+                    PredictionStatus.INVALID_INPUT,
+                    model_trained=True,
+                    duration_input=duration,
+                    reason="model returned a non-finite score.",
+                )
+            metadata = getattr(model, "metadata", None)
+            metadata = metadata if isinstance(metadata, dict) else {}
+            count = metadata.get("training_sample_count")
+            if isinstance(count, bool) or not isinstance(count, int) or count < 5:
+                count = None
+            compatibility_check = getattr(model, "_metadata_is_compatible", None)
+            compatible = (
+                getattr(model, "compatibility_status", None) == "OPTIMIZATION_COMPATIBLE"
+                and callable(compatibility_check)
+                and compatibility_check() is True
+                and count is not None
+            )
+            model_version = metadata.get("model_version") if compatible else None
+            feature_schema_version = metadata.get("feature_schema_version") if compatible else None
+            target_schema_version = metadata.get("target_schema_version") if compatible else None
+            return result(
+                PredictionStatus.TRAINED_MODEL,
+                value=prediction,
+                model_trained=True,
+                history_count=count,
+                history_count_status="AVAILABLE" if count is not None else "UNAVAILABLE",
+                duration_input=duration,
+                reason=None if compatible else "MODEL_FEATURE_UNIT_UNVERIFIED",
+                model_version=model_version,
+                model_version_status="AVAILABLE" if model_version else "MODEL_VERSION_NOT_AVAILABLE",
+                feature_schema_version=feature_schema_version,
+                target_schema_version=target_schema_version,
+                optimizer_eligibility=("ELIGIBLE_HEURISTIC_PROXY" if compatible else "MODEL_FEATURE_UNIT_UNVERIFIED"),
+            )
+
+        if trained_before is False and trained_after is False:
+            try:
+                prediction = self._normalize_prediction(raw_value)
+            except ValueError:
+                return result(
+                    PredictionStatus.INVALID_INPUT,
+                    model_trained=False,
+                    duration_input=duration,
+                    reason="fallback returned a non-finite score.",
+                )
+            behavior_rows = getattr(behavior_engine, "behavior_data_df", None)
+            shape = getattr(behavior_rows, "shape", None)
+            count = shape[0] if isinstance(shape, tuple) and shape and isinstance(shape[0], int) else None
+            return result(
+                PredictionStatus.COLD_START_HEURISTIC,
+                value=prediction,
+                model_trained=False,
+                history_count=count,
+                history_count_status="AVAILABLE" if count is not None else "UNAVAILABLE",
+                fallback_used=True,
+                duration_input=duration,
+                reason="hour_only_cold_start_heuristic_not_personalized",
+            )
+
+        return result(
+            PredictionStatus.UNAVAILABLE,
+            model_trained=trained_after if isinstance(trained_after, bool) else None,
+            duration_input=duration,
+            reason="model training state changed to an unsupported value.",
+        )
 
     def _predict_with_index(
         self,
@@ -145,13 +316,14 @@ class PredictionEngine:
         return self._positive_finite_float(completion_time, field_name="completion_time_prediction")
 
     def _resolve_duration(self, task: Dict[str, Any]) -> float:
-        if task.get("estimated_duration") is not None:
-            raw_duration = task["estimated_duration"]
-        elif task.get("actual_duration") is not None:
-            raw_duration = task["actual_duration"]
-        else:
-            raw_duration = 1.0
-        return self._positive_finite_float(raw_duration, field_name="duration")
+        estimate = task.get("estimated_duration")
+        if estimate is None:
+            raise ValueError("estimated_duration is required for forward prediction.")
+        unit = task.get("estimated_duration_unit")
+        source = task.get("estimated_duration_source")
+        if unit is None or source is None:
+            raise ValueError("explicit estimated_duration_unit and source are required for prediction.")
+        return normalize_duration(estimate, unit, source).normalized_hours
 
     def _resolve_priority(self, task: Dict[str, Any]) -> float:
         if task.get("priority") is None:

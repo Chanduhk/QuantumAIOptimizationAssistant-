@@ -8,8 +8,8 @@ Uses RandomForestRegressor to predict productivity scores (0-100) based on:
 Handles model training, prediction, persistence, and feature importance extraction.
 """
 
-import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -17,13 +17,22 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+
+from backend.app.domain.optimization_input_contract import normalize_duration
 
 logger = logging.getLogger(__name__)
 
 
 class ProductivityModel:
     """ML model for predicting productivity scores."""
+
+    MODEL_VERSION = "productivity-rf-v1"
+    FEATURE_SCHEMA_VERSION = "productivity-features-v1"
+    TARGET_SCHEMA_VERSION = "heuristic-productivity-v1"
+    DATASET_SCHEMA_VERSION = "behavior-dataset-v2"
+    FEATURE_NAMES = ("hour_of_day", "task_type_encoded", "duration_hours")
 
     # Task types recognized by the model
     VALID_TASK_TYPES = {"coding", "research", "writing", "meeting", "admin", "other"}
@@ -38,14 +47,16 @@ class ProductivityModel:
         self.model_path = model_path
         self.model: Optional[RandomForestRegressor] = None
         self.is_trained = False
-        self.feature_names = ["hour_of_day", "task_type_encoded", "duration"]
+        self.feature_names = list(self.FEATURE_NAMES)
+        self.metadata: Optional[Dict[str, Any]] = None
+        self.compatibility_status = "UNTRAINED"
         self.task_type_encoder: Optional[LabelEncoder] = None
         self.training_data_shape: Optional[tuple] = None
 
         if model_path and Path(model_path).exists():
             self.load(model_path)
 
-    def train(self, data: Union[pd.DataFrame, Dict[str, Any]]) -> Dict[str, float]:
+    def train(self, data: Union[pd.DataFrame, Dict[str, Any]]) -> Dict[str, Any]:
         """Train the productivity model.
 
         Args:
@@ -65,15 +76,22 @@ class ProductivityModel:
         Raises:
             ValueError: If data is invalid or missing required columns
         """
-        if isinstance(data, dict):
-            data = pd.DataFrame([data])
-        elif not isinstance(data, pd.DataFrame):
-            raise ValueError("Data must be a pandas DataFrame or dict")
+        if not isinstance(data, pd.DataFrame):
+            raise ValueError("Training data must be a provenance-tagged pandas DataFrame")
 
         if data.empty:
             raise ValueError("Training data cannot be empty")
-        if len(data) < 3:
-            raise ValueError("Training data must contain at least 3 samples")
+        if len(data) < 5:
+            raise ValueError("Training data must contain at least 5 samples for a held-out validation set")
+        duration_unit = data.attrs.get("duration_unit")
+        dataset_version = data.attrs.get("dataset_schema_version")
+        target_version = data.attrs.get("target_schema_version")
+        if duration_unit not in {"minutes", "hours"}:
+            raise ValueError("Training duration unit must be explicitly tagged as minutes or hours")
+        if dataset_version != self.DATASET_SCHEMA_VERSION:
+            raise ValueError("Training dataset schema is missing or incompatible")
+        if target_version != self.TARGET_SCHEMA_VERSION:
+            raise ValueError("Training target schema is missing or incompatible")
 
         # Validate required columns
         required = {"hour_of_day", "task_type", "duration", "productivity_score"}
@@ -87,40 +105,62 @@ class ProductivityModel:
         # Initialize task type encoder
         self._ensure_task_type_encoder()
 
-        # Prepare features
+        # Normalize explicitly tagged duration values once. The model schema
+        # and all inference inputs use hours.
         try:
+            df["duration"] = [
+                normalize_duration(value, duration_unit, "training_dataframe.duration").normalized_hours
+                for value in pd.to_numeric(df["duration"], errors="raise").tolist()
+            ]
             X = self._prepare_features(df)
         except Exception as e:
-            logger.error(f"Error preparing features: {e}")
-            raise ValueError(f"Invalid training data: {e}") from e
+            logger.error("Error preparing productivity features: %s", type(e).__name__)
+            raise ValueError(f"Invalid training data: {type(e).__name__}") from e
 
-        y = df["productivity_score"].values
+        y = pd.to_numeric(df["productivity_score"], errors="raise").to_numpy(dtype=float)
+        if not np.isfinite(y).all():
+            raise ValueError("Training targets must be finite")
 
         # Ensure numeric outputs
         y = np.clip(y, 0, 100)
 
-        # Create and train model
-        self.model = self._create_model()
+        train_x, validation_x, train_y, validation_y = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+        validation_model = self._create_model()
+        validation_model.fit(train_x, train_y)
+        validation_prediction = validation_model.predict(validation_x)
+        validation_r2 = float(validation_model.score(validation_x, validation_y)) if len(validation_y) > 1 else 0.0
+        metrics = {
+            "validation_r2": validation_r2,
+            "validation_mae": float(np.mean(np.abs(validation_prediction - validation_y))),
+            "validation_rmse": float(np.sqrt(np.mean((validation_prediction - validation_y) ** 2))),
+            "training_samples": int(len(train_y)),
+            "validation_samples": int(len(validation_y)),
+            "mae": float(np.mean(np.abs(validation_prediction - validation_y))),
+            "rmse": float(np.sqrt(np.mean((validation_prediction - validation_y) ** 2))),
+        }
 
+        self.model = self._create_model()
         self.model.fit(X, y)
         self.is_trained = True
         self.training_data_shape = X.shape
-
-        # Calculate metrics
-        y_pred = self.model.predict(X)
-        train_r2 = self.model.score(X, y)
-        mae = float(np.mean(np.abs(y_pred - y)))
-        rmse = float(np.sqrt(np.mean((y_pred - y) ** 2)))
-
-        metrics = {
-            "accuracy": float(np.clip(train_r2, 0, 1)),
-            "mae": mae,
-            "rmse": rmse,
-            "samples": int(len(df)),
+        self.metadata = {
+            "model_version": self.MODEL_VERSION,
+            "feature_schema_version": self.FEATURE_SCHEMA_VERSION,
+            "target_schema_version": self.TARGET_SCHEMA_VERSION,
+            "duration_unit": "hours",
+            "training_duration_unit": duration_unit,
+            "feature_names": list(self.FEATURE_NAMES),
+            "training_timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "training_sample_count": int(len(X)),
+            "dataset_schema_version": dataset_version,
+            "target_semantics": "heuristic_derived_productivity_proxy_not_observed_ground_truth",
+            "validation_metrics": metrics.copy(),
         }
-
-        logger.info(f"Model trained: {metrics}")
-        return metrics
+        self.compatibility_status = "OPTIMIZATION_COMPATIBLE"
+        logger.info("Productivity model trained with %d samples", len(X))
+        return {**metrics, "samples": int(len(X))}
 
     def predict(self, hour: int, task_type: str, duration: float) -> float:
         """Predict productivity for a single task.
@@ -140,28 +180,27 @@ class ProductivityModel:
             raise ValueError("Model not trained. Call train() first.")
 
         # Validate inputs
-        if not isinstance(hour, (int, float)) or not (0 <= hour <= 23):
+        if isinstance(hour, bool) or not isinstance(hour, (int, float)) or not np.isfinite(hour) or not (0 <= hour <= 23):
             raise ValueError(f"Hour must be 0-23, got {hour}")
 
         # If task type is unknown, fall back to "other" if supported, else leave as is (will raise in encoder or retrain)
         if task_type not in self.VALID_TASK_TYPES:
             task_type = "other"
 
-        if not isinstance(duration, (int, float)) or duration <= 0:
-            raise ValueError(f"Duration must be > 0, got {duration}")
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not np.isfinite(duration) or duration <= 0:
+            raise ValueError("Duration in hours must be positive and finite")
+        if not self._metadata_is_compatible():
+            raise ValueError("Model metadata is missing or incompatible")
 
         self._ensure_task_type_encoder()
 
         # Prepare input
-        X = np.array(
-            [
-                [
-                    float(hour),
-                    float(self.task_type_encoder.transform([task_type])[0]),
-                    float(duration),
-                ]
-            ]
-        )
+        inference_frame = pd.DataFrame([{
+            "hour_of_day": float(hour),
+            "task_type": task_type,
+            "duration": float(duration),
+        }])
+        X = self._prepare_features(inference_frame)
 
         # Predict and clip to valid range
         prediction = float(self.model.predict(X)[0])
@@ -190,7 +229,7 @@ class ProductivityModel:
                 predictions.append(pred)
             except (KeyError, ValueError) as e:
                 logger.warning(f"Skipping invalid task {task}: {e}")
-                predictions.append(50.0)  # Default mid-range score
+                raise ValueError(f"Invalid prediction input: {type(e).__name__}") from e
 
         return predictions
 
@@ -232,6 +271,7 @@ class ProductivityModel:
             "task_type_encoder": self.task_type_encoder,
             "feature_names": self.feature_names,
             "training_data_shape": self.training_data_shape,
+            "metadata": self.metadata,
         }
 
         joblib.dump(model_data, filepath)
@@ -257,18 +297,57 @@ class ProductivityModel:
             self.task_type_encoder = model_data.get("task_type_encoder")
             self.feature_names = model_data.get("feature_names", self.feature_names)
             self.training_data_shape = model_data.get("training_data_shape")
+            self.metadata = model_data.get("metadata")
             self.is_trained = self.model is not None
+            self.compatibility_status = "OPTIMIZATION_COMPATIBLE" if self._metadata_is_compatible() else "MODEL_ARTIFACT_UNVERIFIED"
             self._ensure_task_type_encoder()
-            if self.is_trained and not self._loaded_model_is_compatible():
+            if self.is_trained and (not self._metadata_is_compatible() or not self._loaded_model_is_compatible()):
                 logger.warning(
-                    "Loaded model at %s is incompatible with the current sklearn runtime; retraining required.",
+                    "Loaded model at %s is unavailable because its runtime or data-contract compatibility is unverified.",
                     filepath,
                 )
-                self.model = self._create_model()
+                self.model = None
                 self.is_trained = False
             logger.info(f"Model loaded from {filepath}")
         except Exception as e:
             raise ValueError(f"Error loading model: {e}") from e
+
+
+    def _metadata_is_compatible(self) -> bool:
+        metadata = self.metadata
+        if not isinstance(metadata, dict):
+            return False
+        required = {
+            "model_version": self.MODEL_VERSION,
+            "feature_schema_version": self.FEATURE_SCHEMA_VERSION,
+            "target_schema_version": self.TARGET_SCHEMA_VERSION,
+            "duration_unit": "hours",
+            "feature_names": list(self.FEATURE_NAMES),
+            "dataset_schema_version": self.DATASET_SCHEMA_VERSION,
+            "target_semantics": "heuristic_derived_productivity_proxy_not_observed_ground_truth",
+        }
+        if any(metadata.get(key) != value for key, value in required.items()):
+            return False
+        if not isinstance(metadata.get("training_timestamp_utc"), str):
+            return False
+        if not isinstance(metadata.get("training_sample_count"), int) or metadata["training_sample_count"] < 5:
+            return False
+        if metadata.get("training_duration_unit") not in {"minutes", "hours"}:
+            return False
+        if not isinstance(metadata.get("training_timestamp_utc"), str):
+            return False
+        try:
+            datetime.fromisoformat(metadata["training_timestamp_utc"])
+        except ValueError:
+            return False
+        metrics = metadata.get("validation_metrics")
+        if not isinstance(metrics, dict):
+            return False
+        for key in ("validation_r2", "validation_mae", "validation_rmse"):
+            value = metrics.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
+                return False
+        return True
 
     def _create_model(self) -> RandomForestRegressor:
         """Create the standard RandomForestRegressor used by this model."""
@@ -325,8 +404,11 @@ class ProductivityModel:
         task_type_encoded = self.task_type_encoder.transform(task_types).astype(float)
         features.append(task_type_encoded)
 
-        # Duration (minutes, normalized)
-        duration = df["duration"].astype(float).values
+        # Duration is normalized to hours before feature preparation for both
+        # fitting and inference. Keep the feature order versioned and explicit.
+        duration = pd.to_numeric(df["duration"], errors="raise").to_numpy(dtype=float)
+        if not np.isfinite(duration).all() or (duration <= 0).any():
+            raise ValueError("duration_hours must be positive and finite")
         features.append(duration)
 
         return np.column_stack(features)

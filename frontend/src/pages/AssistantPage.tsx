@@ -8,9 +8,19 @@ import { useUserStore } from '@/stores/userStore';
 
 export function AssistantPage() {
   const { messages, addMessage, isProcessing, setIsProcessing } = useJamStore();
+  const updateMessage = useJamStore((state) => state.updateMessage);
+  const clearMessages = useJamStore((state) => state.clearMessages);
   const { mutateAsync: sendCommand } = useAICommand();
-  const user_id = useUserStore((state) => state.userId);
+  const userId = useUserStore((state) => state.userId);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const requestInFlight = useRef(false);
+  const requestGeneration = useRef(0);
+
+  useEffect(() => {
+    requestGeneration.current += 1;
+    requestInFlight.current = false;
+    clearMessages();
+  }, [userId, clearMessages]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -19,50 +29,61 @@ export function AssistantPage() {
     }
   }, [messages, isProcessing]);
 
-  const handleSend = async (text: string) => {
-    if (!text.trim() || isProcessing || !user_id) return;
+  const handleSend = async (text: string, retryMessageId?: string) => {
+    const command = text.trim();
+    if (!command || isProcessing || requestInFlight.current || userId === null) return;
 
-    const userMsgId = crypto.randomUUID();
-    const asstMsgId = crypto.randomUUID();
-
-    // 1. Add User Message
-    addMessage({
-      id: userMsgId,
-      role: 'user',
-      command: text,
-      timestamp: Date.now(),
-    });
-
-    // 2. Set Processing State (UI will show indicator on composer)
+    requestInFlight.current = true;
+    const generation = requestGeneration.current;
+    const assistantMessageId = retryMessageId ?? crypto.randomUUID();
+    if (retryMessageId) {
+      updateMessage(assistantMessageId, {
+        isError: false,
+        isPending: true,
+        errorMessage: undefined,
+        result: undefined,
+        timestamp: Date.now(),
+      });
+    } else {
+      addMessage({ id: crypto.randomUUID(), role: 'user', command, timestamp: Date.now() });
+      addMessage({ id: assistantMessageId, role: 'assistant', isPending: true, timestamp: Date.now() });
+    }
     setIsProcessing(true);
 
     try {
-      // 3. Send Command
       const response = await sendCommand({
-        user_id,
-        command: text,
+        user_id: userId,
+        command,
         days_back: 90,
       });
-
-      // 4. Add Assistant Message on Success
-      addMessage({
-        id: asstMsgId,
-        role: 'assistant',
+      if (generation !== requestGeneration.current || useUserStore.getState().userId !== userId) return;
+      if (response.result.success === false) {
+        const backendErrors = response.result.errors;
+        const detail = Array.isArray(backendErrors)
+          ? backendErrors.filter((item): item is string => typeof item === "string").join("; ")
+          : undefined;
+        throw new Error(detail || "JAM could not complete this supported command.");
+      }
+      updateMessage(assistantMessageId, {
         intent: response.intent,
         result: response.result,
+        isPending: false,
         timestamp: Date.now(),
       });
     } catch (error) {
-      // 5. Add Error Message on Failure
-      addMessage({
-        id: asstMsgId,
-        role: 'assistant',
+      if (generation !== requestGeneration.current || useUserStore.getState().userId !== userId) return;
+      updateMessage(assistantMessageId, {
         isError: true,
         errorMessage: error instanceof Error ? error.message : "An unknown error occurred.",
+        retryCommand: command,
+        isPending: false,
         timestamp: Date.now(),
       });
     } finally {
-      setIsProcessing(false);
+      if (generation === requestGeneration.current) {
+        requestInFlight.current = false;
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -76,6 +97,9 @@ export function AssistantPage() {
           <h2 className="text-sm font-semibold tracking-wide uppercase text-[var(--color-text)]">
             JAM Assistant
           </h2>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Supported workflow commands only; open-ended chat responses are not configured.
+          </p>
         </div>
         <div className="text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-surface)] px-3 py-1 rounded-full border border-[var(--color-border)]">
           {messages.length > 0 ? "Session Active" : "Ready"}
@@ -95,10 +119,10 @@ export function AssistantPage() {
           ) : (
             <div className="flex-1">
               <div className="mb-8 text-center text-xs text-[var(--color-text-muted)] opacity-50">
-                Conversation history is available for this session only.
+                Conversation is kept in memory for this signed-in session only; the backend does not restore chat history after refresh.
               </div>
               {messages.map((msg) => (
-                <JamMessage key={msg.id} message={msg} />
+                <JamMessage key={msg.id} message={msg} onRetry={msg.isError && msg.retryCommand ? () => void handleSend(msg.retryCommand!, msg.id) : undefined} />
               ))}
               
               {/* Optional: clear conversation button at top or bottom if they want, but keeping it clean for now */}

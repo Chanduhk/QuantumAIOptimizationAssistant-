@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.app.domain.optimization_input_contract import normalize_duration
+
 import json
 import random
 from pathlib import Path
@@ -117,7 +119,13 @@ class RLScheduler:
             selected_hour = self._pick_available_hour(preferred_hour, used_hours)
             used_hours.add(selected_hour)
 
-            duration = float(task.get("estimated_duration") or task.get("actual_duration") or 1.0)
+            if task.get("estimated_duration") is None:
+                raise ValueError("estimated_duration is required for forward scheduling.")
+            duration_unit = task.get("estimated_duration_unit")
+            duration_source = task.get("estimated_duration_source")
+            if duration_unit is None or duration_source is None:
+                raise ValueError("explicit estimated duration unit and source are required.")
+            duration = normalize_duration(task["estimated_duration"], duration_unit, duration_source).normalized_hours
             task_copy = dict(task)
             task_copy["rl_scheduled_hour"] = selected_hour
             task_copy["rl_scheduled_end_hour"] = round(selected_hour + duration, 2)

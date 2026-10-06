@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.app.domain.optimization_input_contract import normalize_duration
+
 import math
 from typing import Any, Dict, List
 
@@ -121,13 +123,13 @@ class SchedulingEngine:
         return normalized
 
     def _resolve_duration(self, task: Dict[str, Any]) -> float:
-        if task.get("estimated_duration") is not None:
-            raw_duration = task["estimated_duration"]
-        elif task.get("actual_duration") is not None:
-            raw_duration = task["actual_duration"]
-        else:
-            raw_duration = 1.0
-        return self._positive_finite_float(raw_duration, field_name="duration")
+        if task.get("estimated_duration") is None:
+            raise ValueError("estimated_duration is required for forward scheduling.")
+        duration_unit = task.get("estimated_duration_unit")
+        duration_source = task.get("estimated_duration_source")
+        if duration_unit is None or duration_source is None:
+            raise ValueError("explicit estimated duration unit and source are required.")
+        return normalize_duration(task["estimated_duration"], duration_unit, duration_source).normalized_hours
 
     def _positive_finite_float(self, value: Any, field_name: str) -> float:
         number = self._finite_float(value, field_name=field_name)

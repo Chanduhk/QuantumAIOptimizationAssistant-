@@ -70,6 +70,11 @@ def sample_tasks():
         'productivity_score': productivity,
     })
     
+    data.attrs.update({
+        "duration_unit": "minutes",
+        "dataset_schema_version": ProductivityModel.DATASET_SCHEMA_VERSION,
+        "target_schema_version": ProductivityModel.TARGET_SCHEMA_VERSION,
+    })
     return data
 
 
@@ -109,6 +114,22 @@ def behavior_engine(sample_database):
 
 class TestProductivityModel:
     """Tests for the ProductivityModel class."""
+
+    def test_training_requires_explicit_duration_and_dataset_semantics(self, productivity_model, sample_tasks):
+        untagged = sample_tasks.copy()
+        untagged.attrs.clear()
+        with pytest.raises(ValueError, match="explicitly tagged"):
+            productivity_model.train(untagged)
+
+    def test_new_model_persists_versioned_hour_feature_contract(self, productivity_model, sample_tasks):
+        productivity_model.train(sample_tasks)
+        assert productivity_model.feature_names == ["hour_of_day", "task_type_encoded", "duration_hours"]
+        assert productivity_model.metadata["duration_unit"] == "hours"
+        assert productivity_model.metadata["training_duration_unit"] == "minutes"
+        assert productivity_model.metadata["feature_schema_version"] == ProductivityModel.FEATURE_SCHEMA_VERSION
+        assert productivity_model.metadata["training_sample_count"] == len(sample_tasks)
+        assert "heuristic_derived" in productivity_model.metadata["target_semantics"]
+        assert productivity_model.compatibility_status == "OPTIMIZATION_COMPATIBLE"
     
     def test_model_initialization(self, productivity_model):
         """Test model initializes correctly."""
@@ -121,10 +142,10 @@ class TestProductivityModel:
         metrics = productivity_model.train(sample_tasks)
         
         assert productivity_model.is_trained
-        assert 'accuracy' in metrics
+        assert 'validation_r2' in metrics
         assert 'mae' in metrics
         assert 'rmse' in metrics
-        assert 0 <= metrics['accuracy'] <= 1
+        assert np.isfinite(metrics['validation_r2'])
     
     def test_single_prediction(self, productivity_model, sample_tasks):
         """Test single task prediction."""
@@ -208,10 +229,23 @@ class TestProductivityModel:
             # Load
             new_model = ProductivityModel(model_path)
             assert new_model.is_trained
-            
+            assert new_model.metadata["model_version"] == ProductivityModel.MODEL_VERSION
+            assert new_model.metadata["feature_names"] == list(ProductivityModel.FEATURE_NAMES)
+            assert new_model.compatibility_status == "OPTIMIZATION_COMPATIBLE"
+
+            # A legacy artifact with no semantic metadata loads fail-closed.
+            import joblib
+            payload = joblib.load(model_path)
+            payload.pop("metadata", None)
+            legacy_path = str(Path(tmpdir) / "legacy-model.pkl")
+            joblib.dump(payload, legacy_path)
+            legacy_model = ProductivityModel(legacy_path)
+            assert not legacy_model.is_trained
+            assert legacy_model.compatibility_status == "MODEL_ARTIFACT_UNVERIFIED"
+
             # Predictions should be identical
-            pred1 = productivity_model.predict(9, 'coding', 60)
-            pred2 = new_model.predict(9, 'coding', 60)
+            pred1 = productivity_model.predict(9, 'coding', 1.0)
+            pred2 = new_model.predict(9, 'coding', 1.0)
             import math
         assert math.isclose(pred1, pred2, rel_tol=1e-9)
 
@@ -239,6 +273,10 @@ class TestBehaviorIntelligenceEngine:
             'priority': np.random.randint(1, 6, len(sample_tasks)),
             'estimated_duration': sample_tasks['duration'] * 0.9,
             'actual_duration': sample_tasks['duration'],
+            'estimated_duration_unit': ['minutes'] * len(sample_tasks),
+            'estimated_duration_source': ['test_fixture'] * len(sample_tasks),
+            'lifecycle_state': ['completed'] * len(sample_tasks),
+            'outcome_valid': [True] * len(sample_tasks),
             'start_time': [datetime.now() - timedelta(hours=i) for i in range(len(sample_tasks))],
             'end_time': [datetime.now() - timedelta(hours=i-1) for i in range(len(sample_tasks))],
             'completed': [True] * len(sample_tasks),
@@ -264,6 +302,10 @@ class TestBehaviorIntelligenceEngine:
             'priority': np.random.randint(1, 6, len(sample_tasks)),
             'estimated_duration': sample_tasks['duration'] * 0.9,
             'actual_duration': sample_tasks['duration'],
+            'estimated_duration_unit': ['minutes'] * len(sample_tasks),
+            'estimated_duration_source': ['test_fixture'] * len(sample_tasks),
+            'lifecycle_state': ['completed'] * len(sample_tasks),
+            'outcome_valid': [True] * len(sample_tasks),
             'start_time': [datetime.now() for i in range(len(sample_tasks))],
             'end_time': [datetime.now() for i in range(len(sample_tasks))],
             'completed': [True] * len(sample_tasks),
@@ -274,7 +316,7 @@ class TestBehaviorIntelligenceEngine:
         features = behavior_engine.extract_features()
         metrics = behavior_engine.train_productivity_model()
         
-        assert metrics['accuracy'] is not None
+        assert metrics['validation_mae'] is not None
         assert metrics['mae'] is not None
         assert metrics['rmse'] is not None
     
@@ -288,6 +330,10 @@ class TestBehaviorIntelligenceEngine:
             'priority': np.random.randint(1, 6, len(sample_tasks)),
             'estimated_duration': sample_tasks['duration'] * 0.9,
             'actual_duration': sample_tasks['duration'],
+            'estimated_duration_unit': ['minutes'] * len(sample_tasks),
+            'estimated_duration_source': ['test_fixture'] * len(sample_tasks),
+            'lifecycle_state': ['completed'] * len(sample_tasks),
+            'outcome_valid': [True] * len(sample_tasks),
             'start_time': [datetime.now() - timedelta(hours=i) for i in range(len(sample_tasks))],
             'end_time': [datetime.now() - timedelta(hours=i-1) for i in range(len(sample_tasks))],
             'completed': [True] * len(sample_tasks),
@@ -314,6 +360,10 @@ class TestBehaviorIntelligenceEngine:
             'priority': np.random.randint(1, 6, len(sample_tasks)),
             'estimated_duration': sample_tasks['duration'] * 0.9,
             'actual_duration': sample_tasks['duration'],
+            'estimated_duration_unit': ['minutes'] * len(sample_tasks),
+            'estimated_duration_source': ['test_fixture'] * len(sample_tasks),
+            'lifecycle_state': ['completed'] * len(sample_tasks),
+            'outcome_valid': [True] * len(sample_tasks),
             'start_time': [datetime.now() for i in range(len(sample_tasks))],
             'end_time': [datetime.now() for i in range(len(sample_tasks))],
             'completed': [True] * len(sample_tasks),
@@ -338,6 +388,10 @@ class TestBehaviorIntelligenceEngine:
             'priority': np.random.randint(1, 6, len(sample_tasks)),
             'estimated_duration': sample_tasks['duration'] * 0.9,
             'actual_duration': sample_tasks['duration'],
+            'estimated_duration_unit': ['minutes'] * len(sample_tasks),
+            'estimated_duration_source': ['test_fixture'] * len(sample_tasks),
+            'lifecycle_state': ['completed'] * len(sample_tasks),
+            'outcome_valid': [True] * len(sample_tasks),
             'start_time': [datetime.now() for i in range(len(sample_tasks))],
             'end_time': [datetime.now() for i in range(len(sample_tasks))],
             'completed': [True] * len(sample_tasks),
@@ -372,6 +426,10 @@ class TestIntegration:
             'priority': np.random.randint(1, 6, len(sample_tasks)),
             'estimated_duration': sample_tasks['duration'] * 0.9,
             'actual_duration': sample_tasks['duration'],
+            'estimated_duration_unit': ['minutes'] * len(sample_tasks),
+            'estimated_duration_source': ['test_fixture'] * len(sample_tasks),
+            'lifecycle_state': ['completed'] * len(sample_tasks),
+            'outcome_valid': [True] * len(sample_tasks),
             'start_time': [datetime.now() - timedelta(hours=i) for i in range(len(sample_tasks))],
             'end_time': [datetime.now() - timedelta(hours=i-1) for i in range(len(sample_tasks))],
             'completed': [True] * len(sample_tasks),
@@ -387,7 +445,7 @@ class TestIntegration:
         
         # 2. Train model
         metrics = behavior_engine.train_productivity_model()
-        assert metrics['accuracy'] is not None
+        assert metrics['validation_mae'] is not None
         
         # 3. Get patterns
         patterns = behavior_engine.get_user_patterns()
@@ -413,6 +471,10 @@ class TestIntegration:
             'priority': np.random.randint(1, 6, len(sample_tasks)),
             'estimated_duration': sample_tasks['duration'] * 0.9,
             'actual_duration': sample_tasks['duration'],
+            'estimated_duration_unit': ['minutes'] * len(sample_tasks),
+            'estimated_duration_source': ['test_fixture'] * len(sample_tasks),
+            'lifecycle_state': ['completed'] * len(sample_tasks),
+            'outcome_valid': [True] * len(sample_tasks),
             'start_time': [datetime.now() for i in range(len(sample_tasks))],
             'end_time': [datetime.now() for i in range(len(sample_tasks))],
             'completed': [True] * len(sample_tasks),
@@ -426,7 +488,7 @@ class TestIntegration:
         # Predict for each task type
         for task_type in task_types:
             if task_type in sample_tasks['task_type'].values:
-                score = behavior_engine.predict_task_productivity(9, task_type, 60)
+                score = behavior_engine.predict_task_productivity(9, task_type, 1.0)
                 assert 0 <= score <= 100
 
 
@@ -452,7 +514,7 @@ class TestErrorHandling:
     def test_predict_before_training(self, productivity_model):
         """Test error when predicting before training."""
         with pytest.raises(ValueError):
-            productivity_model.predict(9, 'coding', 60)
+            productivity_model.predict(9, 'coding', 1.0)
     
     def test_missing_required_columns(self, behavior_engine, sample_tasks):
         """Test error with missing required columns."""
@@ -496,9 +558,14 @@ class TestPerformance:
             'productivity_score': np.random.uniform(20, 100, 1000),
         })
         
+        large_data.attrs.update({
+            "duration_unit": "minutes",
+            "dataset_schema_version": ProductivityModel.DATASET_SCHEMA_VERSION,
+            "target_schema_version": ProductivityModel.TARGET_SCHEMA_VERSION,
+        })
         # Should train successfully
         metrics = productivity_model.train(large_data)
-        assert metrics['samples'] > 800  # Most used for training
+        assert metrics['samples'] == 1000  # Most used for training
     
     def test_batch_predictions_performance(self, productivity_model, sample_tasks):
         """Test batch prediction performance."""
@@ -506,7 +573,7 @@ class TestPerformance:
         
         # Create 100 tasks to predict
         tasks = [
-            {'hour': np.random.randint(8, 20), 'task_type': 'coding', 'duration': 60}
+            {'hour': np.random.randint(8, 20), 'task_type': 'coding', 'duration': 1.0}
             for _ in range(100)
         ]
         
