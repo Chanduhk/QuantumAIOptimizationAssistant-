@@ -75,6 +75,28 @@ def resource_state(**overrides):
     return ResourceState(**payload)
 
 
+def test_explicit_minute_estimate_is_normalized_for_resource_budget():
+    engine = ExecutiveResourceEngine()
+    planning_context = context([
+        {
+            "id": 9,
+            "title": "F10 smoke completed task",
+            "task_type": "focus",
+            "priority": 3,
+            "estimated_duration": 30,
+            "estimated_duration_unit": "minutes",
+            "estimated_duration_source": "task_api",
+        }
+    ])
+
+    allocation = engine.evaluate_time_budget(
+        planning_context,
+        {"execution_state": {"progress": 50.0}},
+    )
+
+    assert allocation.consumed_percent == 6.25
+
+
 def test_resource_domain_validation_and_immutability():
     state = resource_state()
 

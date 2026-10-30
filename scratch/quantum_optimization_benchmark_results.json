@@ -1,0 +1,177 @@
+{
+  "provenance": "LOCAL_CLASSICAL_SIMULATION \u2014 NO QUANTUM HARDWARE EXECUTION",
+  "execution_timestamp_utc": "2026-10-16T15:45:07Z",
+  "stage_9a_formulation": {
+    "total_instances_tested": 3,
+    "total_states_enumerated": 56,
+    "qubo_direct_vs_evaluated_max_diff": 0.0,
+    "qubo_vs_ising_max_diff": 0.0,
+    "transformation_convention": "x_i = (1 + s_i) / 2 where s_i in {-1, +1}",
+    "constraints_verified": true,
+    "slack_encoding_verified": true,
+    "all_exact_matches": true,
+    "notes": "Mathematical equivalence confirmed across all states with zero numerical divergence."
+  },
+  "stage_9b_classical_references": [
+    {
+      "problem_id": "bench_3q_small",
+      "num_variables": 3,
+      "num_constraints": 0,
+      "optimal_energy": -5.5,
+      "optimal_bitstrings": [
+        "011"
+      ],
+      "runtime_ms": 0.21,
+      "solver_method": "ExactClassicalSolver (Exhaustive Bitstring Enumeration)"
+    },
+    {
+      "problem_id": "bench_4q_conflict",
+      "num_variables": 4,
+      "num_constraints": 0,
+      "optimal_energy": -4.5,
+      "optimal_bitstrings": [
+        "0101"
+      ],
+      "runtime_ms": 0.2,
+      "solver_method": "ExactClassicalSolver (Exhaustive Bitstring Enumeration)"
+    },
+    {
+      "problem_id": "bench_6q_scheduling",
+      "num_variables": 6,
+      "num_constraints": 0,
+      "optimal_energy": -6.0,
+      "optimal_bitstrings": [
+        "101010"
+      ],
+      "runtime_ms": 0.83,
+      "solver_method": "ExactClassicalSolver (Exhaustive Bitstring Enumeration)"
+    },
+    {
+      "problem_id": "bench_8q_structured",
+      "num_variables": 8,
+      "num_constraints": 0,
+      "optimal_energy": -7.0,
+      "optimal_bitstrings": [
+        "01011010"
+      ],
+      "runtime_ms": 3.57,
+      "solver_method": "ExactClassicalSolver (Exhaustive Bitstring Enumeration)"
+    }
+  ],
+  "stage_9c_qaoa_simulations": [
+    {
+      "problem_id": "bench_3q_small",
+      "num_qubits": 3,
+      "circuit_depth_p": 1,
+      "statevector_norm": 0.9999999999999998,
+      "statevector_norm_valid": true,
+      "exact_optimal_energy": -5.5,
+      "worst_energy": 2.0,
+      "expectation_energy": -0.9903,
+      "best_sampled_energy": -5.5,
+      "approximation_ratio": 1.0,
+      "sampled_feasibility_rate_pct": 100.0,
+      "runtime_ms": 3.71,
+      "provenance": "LOCAL_CLASSICAL_SIMULATION \u2014 NO QUANTUM HARDWARE EXECUTION"
+    },
+    {
+      "problem_id": "bench_4q_conflict",
+      "num_qubits": 4,
+      "circuit_depth_p": 1,
+      "statevector_norm": 0.9999999999999992,
+      "statevector_norm_valid": true,
+      "exact_optimal_energy": -4.5,
+      "worst_energy": 8.0,
+      "expectation_energy": 1.2881,
+      "best_sampled_energy": -4.5,
+      "approximation_ratio": 1.0,
+      "sampled_feasibility_rate_pct": 100.0,
+      "runtime_ms": 3.92,
+      "provenance": "LOCAL_CLASSICAL_SIMULATION \u2014 NO QUANTUM HARDWARE EXECUTION"
+    },
+    {
+      "problem_id": "bench_6q_scheduling",
+      "num_qubits": 6,
+      "circuit_depth_p": 1,
+      "statevector_norm": 0.999999999999999,
+      "statevector_norm_valid": true,
+      "exact_optimal_energy": -6.0,
+      "worst_energy": 12.0,
+      "expectation_energy": 2.8863,
+      "best_sampled_energy": -6.0,
+      "approximation_ratio": 1.0,
+      "sampled_feasibility_rate_pct": 100.0,
+      "runtime_ms": 8.44,
+      "provenance": "LOCAL_CLASSICAL_SIMULATION \u2014 NO QUANTUM HARDWARE EXECUTION"
+    },
+    {
+      "problem_id": "bench_8q_structured",
+      "num_qubits": 8,
+      "circuit_depth_p": 1,
+      "statevector_norm": 0.9999999999999983,
+      "statevector_norm_valid": true,
+      "exact_optimal_energy": -7.0,
+      "worst_energy": 16.0,
+      "expectation_energy": 5.6151,
+      "best_sampled_energy": -7.0,
+      "approximation_ratio": 1.0,
+      "sampled_feasibility_rate_pct": 100.0,
+      "runtime_ms": 27.71,
+      "provenance": "LOCAL_CLASSICAL_SIMULATION \u2014 NO QUANTUM HARDWARE EXECUTION"
+    }
+  ],
+  "stage_9d_hybrid_comparisons": [
+    {
+      "problem_id": "bench_3q_small",
+      "classical_energy": -5.5,
+      "qaoa_energy": -5.5,
+      "selected_energy": -5.5,
+      "selected_source": "quantum_qaoa",
+      "feasibility_rate_pct": 100.0,
+      "runtime_ms": 1.68,
+      "fallback_active": false
+    },
+    {
+      "problem_id": "bench_4q_conflict",
+      "classical_energy": -4.5,
+      "qaoa_energy": -4.5,
+      "selected_energy": -4.5,
+      "selected_source": "quantum_qaoa",
+      "feasibility_rate_pct": 100.0,
+      "runtime_ms": 3.52,
+      "fallback_active": false
+    },
+    {
+      "problem_id": "bench_6q_scheduling",
+      "classical_energy": -6.0,
+      "qaoa_energy": -6.0,
+      "selected_energy": -6.0,
+      "selected_source": "quantum_qaoa",
+      "feasibility_rate_pct": 100.0,
+      "runtime_ms": 8.75,
+      "fallback_active": false
+    },
+    {
+      "problem_id": "bench_8q_structured",
+      "classical_energy": -7.0,
+      "qaoa_energy": -7.0,
+      "selected_energy": -7.0,
+      "selected_source": "quantum_qaoa",
+      "feasibility_rate_pct": 100.0,
+      "runtime_ms": 37.21,
+      "fallback_active": false
+    }
+  ],
+  "stage_9e_multi_objective": {
+    "num_scenarios_evaluated": 5,
+    "pareto_frontier_size": 3,
+    "non_dominated_verified": true,
+    "hypervolume_estimate": 6250.0,
+    "spread_metric": 15.8,
+    "selected_scenario_id": "S2_balanced_sustainable",
+    "selected_overall_score": 87.93
+  },
+  "quantum_hardware_access": "NONE_LOCAL_SIMULATION_ONLY",
+  "quantum_advantage_observed": false,
+  "notes": "Strictly executed via classical software statevector linear algebra on CPU. No quantum hardware executed; no quantum advantage claimed or observed."
+}

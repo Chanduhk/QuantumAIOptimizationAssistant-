@@ -322,9 +322,9 @@ class AIOrchestrator:
                 tuple(getattr(self.rl_scheduler, "available_actions", ())),
             )
             matrix_status = "COMPLETE"
-            nontriviality_status = matrix.nontriviality
             if matrix.nontriviality != "PASS":
-                suitability = analyzer.assess(matrix, None, None)
+                classical = ClassicalOptimizer(allow_fallback=True).optimize(matrix)
+                suitability = analyzer.assess(matrix, classical, None)
             else:
                 classical = ClassicalOptimizer().optimize(matrix)
                 formulation = AssignmentQuboIsingBuilder().build(matrix)
@@ -982,10 +982,8 @@ class AIOrchestrator:
         )
         if task_history is None or not hasattr(task_history, "empty"):
             raise ValueError("Behavior engine must return a DataFrame-like task history.")
-        if task_history.empty:
-            raise ValueError("No completed tasks found for the user.")
-
-        self.behavior_engine.extract_features()
+        if not task_history.empty:
+            self.behavior_engine.extract_features()
         patterns = self.behavior_engine.get_user_patterns()
         self._validate_behavior_patterns(patterns)
         return patterns

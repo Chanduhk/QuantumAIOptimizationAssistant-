@@ -5,11 +5,14 @@ import { motion } from "framer-motion";
 interface TabsProps {
   tabs: { id: string; label: string; content: React.ReactNode }[];
   defaultTab?: string;
+  activeTab?: string;
+  onTabChange?: (tabId: string) => void;
   className?: string;
 }
 
-export function Tabs({ tabs, defaultTab, className }: TabsProps) {
-  const [activeTab, setActiveTab] = React.useState(defaultTab || tabs[0]?.id);
+export function Tabs({ tabs, defaultTab, activeTab: controlledTab, onTabChange, className }: TabsProps) {
+  const [internalTab, setInternalTab] = React.useState(defaultTab || tabs[0]?.id);
+  const activeTab = controlledTab ?? internalTab;
 
   const activeContent = React.useMemo(() => {
     return tabs.find((t) => t.id === activeTab)?.content || null;
@@ -23,7 +26,7 @@ export function Tabs({ tabs, defaultTab, className }: TabsProps) {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => { if (controlledTab === undefined) setInternalTab(tab.id); onTabChange?.(tab.id); }}
               className={cn(
                 "relative px-4 py-3 text-sm font-medium transition-colors focus:outline-none whitespace-nowrap",
                 isActive ? "text-primary" : "text-content-secondary hover:text-content-primary"

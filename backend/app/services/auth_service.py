@@ -156,7 +156,21 @@ def create_session(db: Session, user: User) -> IssuedSession:
 def _is_public(request: Request) -> bool:
     return (
         not request.url.path.startswith("/api/v1/")
-        or request.url.path in {"/api/v1/system/health", "/api/v1/auth/register", "/api/v1/auth/login"}
+        or request.url.path in {
+            "/api/v1/system/health",
+            "/api/v1/system/status",
+            "/api/v1/system/component-inventory",
+            "/api/v1/ml/model-status",
+            "/api/v1/quantum/status",
+            "/api/v1/ai/provider-status",
+            "/api/v1/ai/provider-test",
+            "/api/v1/benchmarks/datasets",
+            "/api/v1/benchmarks/quantum",
+            "/api/v1/benchmarks/rl",
+            "/api/v1/benchmarks/vector-memory",
+            "/api/v1/auth/register",
+            "/api/v1/auth/login",
+        }
         or request.method == "OPTIONS"
     )
 
@@ -223,7 +237,7 @@ async def enforce_authenticated_request(
         if parsed_id != user.id:
             raise HTTPException(status_code=403, detail="Authenticated identity does not match requested user.")
 
-    task_match = re.fullmatch(r"/api/v1/tasks/(\d+)(?:/(?:start|complete))?", request.url.path)
+    task_match = re.fullmatch(r"/api/v1/tasks/(\d+)(?:/(?:start|complete|feedback))?", request.url.path)
     if task_match:
         owned_task = db.query(Task.id).filter(Task.id == int(task_match.group(1)), Task.user_id == user.id).first()
         if owned_task is None:

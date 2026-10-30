@@ -32,7 +32,10 @@ export function getApiErrorMessage(error: unknown, fallback = 'The request could
 }
 
 // Set VITE_API_URL when the frontend and API are hosted separately.
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// In browser development, default to '' to use the Vite server proxy and avoid IPv6 resolution latency.
+const baseURL = import.meta.env.VITE_API_URL !== undefined 
+  ? import.meta.env.VITE_API_URL 
+  : (typeof window !== 'undefined' ? '' : 'http://127.0.0.1:8000');
 
 export const apiClient = axios.create({
   baseURL,
@@ -52,6 +55,12 @@ apiClient.interceptors.request.use(
         .find((entry) => entry.startsWith('heliox_csrf='))
         ?.slice('heliox_csrf='.length);
       if (csrf) config.headers.set('X-CSRF-Token', decodeURIComponent(csrf));
+    }
+    try {
+      const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (userTz) config.headers.set('X-User-Timezone', userTz);
+    } catch {
+      // Intl fallback
     }
     return config;
   },

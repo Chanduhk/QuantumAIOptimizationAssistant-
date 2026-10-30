@@ -349,6 +349,9 @@ class TestBehaviorIntelligenceEngine:
         assert 'preferred_task_types' in patterns
         assert 'productivity_by_task_type' in patterns
         assert isinstance(patterns['best_focus_hours'], list)
+        # FastAPI/Pydantic response serialization rejects NumPy integer
+        # scalars nested in the real executive-plan result.
+        assert all(type(hour) is int for hour in patterns['best_focus_hours'])
     
     def test_predictions(self, behavior_engine, sample_tasks):
         """Test productivity predictions."""

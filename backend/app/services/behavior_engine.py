@@ -47,6 +47,28 @@ class BehaviorIntelligenceEngine:
             if model.is_trained and model.compatibility_status == "OPTIMIZATION_COMPATIBLE":
                 self.productivity_model = model
                 return
+
+        # Fall back to registered benchmark ProductivityModel if available
+        try:
+            from backend.app.ml.model_registry import get_model_registry
+            reg = get_model_registry()
+            latest = reg.get_latest_model("ProductivityModel")
+            if latest and getattr(latest.model_object, "is_trained", False):
+                self.productivity_model = latest.model_object
+                return
+        except Exception:
+            pass
+
+        benchmark_path = Path(__file__).resolve().parents[3] / "data" / "model_artifacts" / "productivity_benchmark_candidate_uci-garment-productivity.joblib"
+        if benchmark_path.exists():
+            try:
+                bm = ProductivityModel(model_path=str(benchmark_path))
+                if bm.is_trained and bm.compatibility_status == "OPTIMIZATION_COMPATIBLE":
+                    self.productivity_model = bm
+                    return
+            except Exception:
+                pass
+
         self.productivity_model = ProductivityModel()
         self.productivity_model.model_path = str(base_path)
 
@@ -299,7 +321,13 @@ class BehaviorIntelligenceEngine:
             "average_focus_score": round(float(self.behavior_data_df["focus_score"].mean()), 2),
             "average_energy_level": round(float(self.behavior_data_df["energy_level"].mean()), 2),
             "average_completion_time": round(float(self.behavior_data_df["completion_time"].mean()), 2),
-            "best_focus_hours": grouped_hours.sort_values(ascending=False).head(3).index.astype(int).tolist(),
+            # Convert each index scalar explicitly: pandas may return NumPy
+            # integer scalars from ``tolist()``, which FastAPI/Pydantic cannot
+            # serialize inside the executive-plan response model.
+            "best_focus_hours": [
+                int(hour)
+                for hour in grouped_hours.sort_values(ascending=False).head(3).index
+            ],
             "preferred_task_types": grouped_tasks.sort_values(ascending=False).head(3).index.astype(str).tolist(),
             "hourly_productivity": {
                 int(hour): round(float(score), 2)

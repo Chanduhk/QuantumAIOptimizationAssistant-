@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Plus, ListTodo } from "lucide-react";
+import { Plus, ListTodo, Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/Spinner";
@@ -8,15 +8,21 @@ import { TaskRow } from "./tasks/TaskRow";
 import { TaskCreateDialog } from "./tasks/TaskCreateDialog";
 import { Tabs } from "@/components/ui/Tabs";
 import { getApiErrorMessage } from "@/api/client";
+import { Task } from "@/api/endpoints";
 
 export function TasksPage() {
   const { data: tasksResponse, isLoading, error, refetch } = useTasks();
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [activeTab, setActiveTab] = React.useState("pending");
 
   const tasks = tasksResponse?.tasks || [];
 
-  const pendingTasks = tasks.filter(t => t.lifecycle_state === "created" || t.lifecycle_state === "started");
-  const completedTasks = tasks.filter(t => t.lifecycle_state === "completed");
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const visibleTasks = tasks.filter((task) => !normalizedSearch || `${task.title} ${task.task_type}`.toLocaleLowerCase().includes(normalizedSearch));
+  const isTaskCompleted = (t: Task) => Boolean(t.completed) || t.lifecycle_state === "completed";
+  const pendingTasks = visibleTasks.filter((t) => !isTaskCompleted(t));
+  const completedTasks = visibleTasks.filter((t) => isTaskCompleted(t));
 
   const renderContent = () => {
     if (isLoading) {
@@ -56,13 +62,13 @@ export function TasksPage() {
     const tabData = [
       {
         id: "all",
-        label: `All (${tasks.length})`,
+        label: `All (${visibleTasks.length})`,
         content: (
           <div className="space-y-3 pt-4">
-            {tasks.map(task => (
+            {visibleTasks.map(task => (
               <TaskRow key={task.id} task={task} />
             ))}
-            {tasks.length === 0 && <p className="text-content-secondary py-8 text-center">No tasks found.</p>}
+            {visibleTasks.length === 0 && <p className="text-content-secondary py-8 text-center">No tasks match this search.</p>}
           </div>
         )
       },
@@ -92,15 +98,15 @@ export function TasksPage() {
       }
     ];
 
-    return <Tabs tabs={tabData} defaultTab="pending" className="w-full" />;
+    return <Tabs tabs={tabData} activeTab={activeTab} onTabChange={setActiveTab} className="w-full" />;
   };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-content-primary">Tasks Management</h2>
-          <p className="text-content-secondary">Manage, monitor, and coordinate your tasks.</p>
+          <h2 className="text-2xl font-bold tracking-tight text-content-primary">My Tasks</h2>
+          <p className="text-content-secondary">Track, start, and complete your personal tasks with verified feedback.</p>
         </div>
         <Button
           variant="primary"
@@ -111,11 +117,20 @@ export function TasksPage() {
         </Button>
       </div>
 
+      {!isLoading && !error && tasks.length > 0 && (
+        <label className="flex max-w-lg items-center gap-2 rounded-lg border border-border/70 bg-surface-1/90 backdrop-blur-md px-3.5 py-2 text-content-secondary shadow-glass focus-within:ring-2 focus-within:ring-primary focus-within:border-primary/50">
+          <Search aria-hidden="true" className="h-4 w-4 shrink-0" />
+          <span className="sr-only">Search tasks</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or task type" className="min-w-0 flex-1 bg-transparent text-sm text-content-primary outline-none placeholder:text-content-tertiary" />
+        </label>
+      )}
+
       {renderContent()}
 
       <TaskCreateDialog
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
+        onCreated={() => setActiveTab("pending")}
       />
     </div>
   );

@@ -48,12 +48,12 @@ export function AuthPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
-      <Card className="w-full max-w-md">
+    <main className="flex min-h-screen items-center justify-center milky-way-atmosphere px-4 py-10">
+      <Card className="w-full max-w-md shadow-celestial border-border/70">
         <CardHeader className="text-center">
-          <p className="text-sm font-bold tracking-wider text-primary">HELIOX AI</p>
-          <CardTitle className="text-2xl">{isSignup ? "Create your account" : "Sign in to JAM"}</CardTitle>
-          <p className="text-sm text-content-secondary">Your account secures access to your tasks and assistant history.</p>
+          <p className="text-xs font-bold tracking-[0.2em] text-primary uppercase">HELIOX AI · Intelligent Assistant</p>
+          <CardTitle className="text-2xl mt-1">{isSignup ? "Create your account" : "Sign in to JAM"}</CardTitle>
+          <p className="text-sm text-content-secondary">Your account secures access to your personal intelligence assistant.</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

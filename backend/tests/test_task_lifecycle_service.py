@@ -389,6 +389,15 @@ def test_api_lifecycle_flow_uses_isolated_test_database():
         )
         assert start_response.status_code == 200
 
+        # Duplicate start on already-started task returns 409 conflict
+        dup_start = client.post(
+            f"/api/v1/tasks/{task_id}/start",
+            headers=headers,
+            json={"started_at": (BASE + timedelta(minutes=6)).isoformat()},
+        )
+        assert dup_start.status_code == 409
+        assert "already been started" in dup_start.json()["detail"]
+
         complete_response = client.post(
             f"/api/v1/tasks/{task_id}/complete",
             headers=headers,
@@ -404,5 +413,69 @@ def test_api_lifecycle_flow_uses_isolated_test_database():
         report = readiness.json()["result"]["adapter_report"]
         assert report["eligible_records"] == 1
         assert report["dataset_row_count"] == 1
+
+        # Starting an already-completed task returns 409 conflict
+        comp_start = client.post(
+            f"/api/v1/tasks/{task_id}/start",
+            headers=headers,
+            json={"started_at": (BASE + timedelta(minutes=70)).isoformat()},
+        )
+        assert comp_start.status_code == 409
+        assert "completed task cannot be started" in comp_start.json()["detail"]
     finally:
         app.dependency_overrides.clear()
+
+
+def test_serialize_task_normalizes_effective_lifecycle_state():
+    session = memory_session()
+    service = TaskLifecycleService(session=session, clock=lambda: BASE)
+    task = service.create_task(
+        user_id=1,
+        title="Sample Task",
+        task_type="focus",
+        priority=3,
+        estimated_duration=60.0,
+        created_at=BASE,
+    )
+
+    # Initially created
+    serialized = service.serialize_task(task)
+    assert serialized["lifecycle_state"] == "created"
+
+    # Even if lifecycle_state is manually 'created', if start_time is set, serialize returns 'started'
+    task.start_time = BASE + timedelta(minutes=10)
+    task.lifecycle_state = "created"
+    serialized_started = service.serialize_task(task)
+    assert serialized_started["lifecycle_state"] == "started"
+
+    # If completed is True, serialize returns 'completed'
+    task.completed = True
+    serialized_completed = service.serialize_task(task)
+    assert serialized_completed["lifecycle_state"] == "completed"
+
+
+def test_get_all_tasks_and_get_task_self_heals_inconsistent_lifecycle_state():
+    session = memory_session()
+    service = TaskLifecycleService(session=session, clock=lambda: BASE)
+    task = service.create_task(
+        user_id=1,
+        title="Sample Task",
+        task_type="focus",
+        priority=3,
+        estimated_duration=60.0,
+        created_at=BASE,
+    )
+
+    # Simulate inconsistent DB row from proposal scheduling
+    task.start_time = BASE + timedelta(hours=1)
+    task.end_time = BASE + timedelta(hours=2)
+    task.lifecycle_state = "created"
+    session.commit()
+
+    # get_task self-heals
+    fetched = service.get_task(task_id=task.id)
+    assert fetched.lifecycle_state == "started"
+
+    # get_all_tasks self-heals
+    tasks = service.get_all_tasks(user_id=1)
+    assert tasks[0].lifecycle_state == "started"

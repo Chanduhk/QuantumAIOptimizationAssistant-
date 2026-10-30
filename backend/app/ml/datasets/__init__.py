@@ -24,6 +24,11 @@ from backend.app.ml.datasets.task_collection_report import (
     TaskCollectionReport,
     TaskCollectionReporter,
 )
+from backend.app.ml.datasets.duration_quality_gate import (
+    DurationExclusionReason,
+    DurationQualityAssessment,
+    DurationQualityGate,
+)
 
 __all__ = [
     "CanonicalEventHistory",
@@ -37,6 +42,9 @@ __all__ = [
     "DatasetRow",
     "DatasetSplit",
     "DurationDatasetBuilder",
+    "DurationExclusionReason",
+    "DurationQualityAssessment",
+    "DurationQualityGate",
     "EventType",
     "LeakageGuard",
     "PredictionSnapshot",

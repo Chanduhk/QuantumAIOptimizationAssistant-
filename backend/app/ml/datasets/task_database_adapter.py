@@ -15,6 +15,7 @@ from backend.app.ml.datasets.report import DatasetReport, DatasetReporter
 from backend.app.ml.datasets.splitter import DatasetSplit, TemporalDatasetSplitter
 from backend.app.models.behavior_data import BehaviorData as _BehaviorData
 from backend.app.models.task import Task
+from backend.app.ml.datasets.duration_quality_gate import DurationQualityGate
 
 
 DERIVED_DURATION_TOLERANCE_MINUTES = 1e-6
@@ -235,6 +236,13 @@ class TaskDataExtractor:
             raise ValueError("task.actual_duration conflicts with duration derived from start_time/end_time.")
         if actual_duration <= 0:
             raise ValueError("task.actual_duration must be positive.")
+
+        quality_assessment = DurationQualityGate.assess(
+            actual_duration_minutes=actual_duration,
+            estimated_duration_minutes=estimate,
+        )
+        if not quality_assessment.is_eligible:
+            raise ValueError(f"duration quality anomaly: {quality_assessment.exclusion_reason}")
 
         events = (
             RawTaskEvent(

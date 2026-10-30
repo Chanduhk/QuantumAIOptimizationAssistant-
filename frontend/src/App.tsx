@@ -2,7 +2,7 @@ import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-rou
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { ErrorBoundary, RouteErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AuthPage } from "@/pages/AuthPage";
 import { CURRENT_USER_QUERY_KEY, useCurrentUser } from "@/api/hooks";
 import { Spinner } from "@/components/ui/Spinner";
@@ -66,14 +66,11 @@ function AuthenticationExpiryHandler() {
 const router = createBrowserRouter([
   { path: "/login", element: <AuthPage /> },
   { path: "/signup", element: <AuthPage /> },
+  { path: "/auth", element: <Navigate to="/login" replace /> },
   {
     path: "/",
     element: <RequireAuthentication />,
-    errorElement: (
-      <ErrorBoundary>
-        <div />
-      </ErrorBoundary>
-    ),
+    errorElement: <RouteErrorBoundary />,
     children: [
       { element: <MainLayout />, children: [
         { index: true, element: <DashboardPage /> },
@@ -83,6 +80,7 @@ const router = createBrowserRouter([
         { path: "optimization", element: <OptimizationPage /> },
         { path: "intelligence", element: <IntelligencePage /> },
         { path: "data-learning", element: <DataLearningPage /> },
+        { path: "learning", element: <Navigate to="/data-learning" replace /> },
         { path: "quantum", element: <QuantumWorkspacePage /> },
         { path: "settings", element: <SettingsPage /> },
         { path: "status", element: <SystemStatusPage /> },

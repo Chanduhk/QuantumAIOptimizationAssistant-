@@ -3,6 +3,7 @@ from __future__ import annotations
 from backend.app.domain.optimization_input_contract import normalize_duration
 
 import json
+import math
 import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -17,6 +18,7 @@ class RLScheduler:
         learning_rate: float = 0.2,
         discount_factor: float = 0.85,
         exploration_rate: float = 0.1,
+        available_actions: Optional[List[int]] = None,
     ) -> None:
         self.learning_rate = learning_rate
         self.discount_factor = discount_factor
@@ -25,8 +27,13 @@ class RLScheduler:
             policy_path
             or Path(__file__).resolve().parents[2] / "artifacts" / "rl_scheduler_policy.json"
         )
-        self.available_actions = [hour for hour in range(6, 23)]
+        self.available_actions = (
+            sorted(list(available_actions))
+            if available_actions is not None
+            else [hour for hour in range(6, 23)]
+        )
         self.q_table: Dict[str, Dict[str, float]] = {}
+        self.readiness_status = "NOT_READY_INSUFFICIENT_EPISODES"
         self._load_policy()
 
     def train_agent(
@@ -114,11 +121,6 @@ class RLScheduler:
         used_hours: set[int] = set()
 
         for task in tasks:
-            state = self._build_state(task, behavior_patterns)
-            preferred_hour = self.choose_action(state)
-            selected_hour = self._pick_available_hour(preferred_hour, used_hours)
-            used_hours.add(selected_hour)
-
             if task.get("estimated_duration") is None:
                 raise ValueError("estimated_duration is required for forward scheduling.")
             duration_unit = task.get("estimated_duration_unit")
@@ -126,6 +128,15 @@ class RLScheduler:
             if duration_unit is None or duration_source is None:
                 raise ValueError("explicit estimated duration unit and source are required.")
             duration = normalize_duration(task["estimated_duration"], duration_unit, duration_source).normalized_hours
+
+            state = self._build_state(task, behavior_patterns)
+            preferred_hour = self.choose_action(state)
+            selected_hour = self._pick_available_hour(preferred_hour, used_hours, duration_hours=duration)
+
+            span_slots = max(1, math.ceil(duration - 1e-6))
+            for offset in range(span_slots):
+                used_hours.add(selected_hour + offset)
+
             task_copy = dict(task)
             task_copy["rl_scheduled_hour"] = selected_hour
             task_copy["rl_scheduled_end_hour"] = round(selected_hour + duration, 2)
@@ -192,12 +203,27 @@ class RLScheduler:
             return max(20.0, 100.0 - (distance * 12.0))
         return float(behavior_patterns.get("average_energy_level", 60.0))
 
-    def _pick_available_hour(self, preferred_hour: int, used_hours: set[int]) -> int:
-        if preferred_hour not in used_hours:
+    def _pick_available_hour(
+        self,
+        preferred_hour: int,
+        used_hours: set[int],
+        duration_hours: float = 1.0,
+    ) -> int:
+        span_slots = max(1, math.ceil(duration_hours - 1e-6))
+        max_horizon = max(self.available_actions) + 1 if self.available_actions else 23
+
+        def _is_span_available(start: int) -> bool:
+            if start not in self.available_actions:
+                return False
+            if start + duration_hours > max_horizon:
+                return False
+            return all((start + offset) not in used_hours for offset in range(span_slots))
+
+        if _is_span_available(preferred_hour):
             return preferred_hour
 
         for candidate in self.available_actions:
-            if candidate not in used_hours:
+            if _is_span_available(candidate):
                 return candidate
         return preferred_hour
 
@@ -213,9 +239,29 @@ class RLScheduler:
         )
 
     def _load_policy(self) -> None:
-        if not self.policy_path.exists():
-            return
-        self.q_table = json.loads(self.policy_path.read_text(encoding="utf-8"))
+        loaded = False
+        if self.policy_path.exists():
+            try:
+                data = json.loads(self.policy_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    self.q_table = data
+                    if any(any(v != 0.0 for v in actions.values()) for actions in self.q_table.values() if isinstance(actions, dict)):
+                        loaded = True
+                        self.readiness_status = "TRAINED"
+            except Exception:
+                pass
+
+        if not loaded:
+            benchmark_candidate = self.policy_path.parent / "rl_scheduler_benchmark_candidate.json"
+            if benchmark_candidate.exists():
+                try:
+                    data = json.loads(benchmark_candidate.read_text(encoding="utf-8"))
+                    if isinstance(data, dict) and any(any(v != 0.0 for v in actions.values()) for actions in data.values() if isinstance(actions, dict)):
+                        self.q_table = data
+                        self.readiness_status = "TRAINED"
+                        loaded = True
+                except Exception:
+                    pass
 
     def _save_policy(self) -> None:
         self.policy_path.parent.mkdir(parents=True, exist_ok=True)

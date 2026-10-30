@@ -9,9 +9,10 @@ import { getApiErrorMessage } from "@/api/client";
 interface TaskCreateDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onCreated?: () => void;
 }
 
-export function TaskCreateDialog({ isOpen, onClose }: TaskCreateDialogProps) {
+export function TaskCreateDialog({ isOpen, onClose, onCreated }: TaskCreateDialogProps) {
   const { mutate: createTask, isPending } = useCreateTask();
 
   const [title, setTitle] = React.useState("");
@@ -59,6 +60,7 @@ export function TaskCreateDialog({ isOpen, onClose }: TaskCreateDialogProps) {
           setTaskType("");
           setPriority("3");
           setEstimatedDuration("");
+          onCreated?.();
           onClose();
         },
         onError: (err: unknown) => {

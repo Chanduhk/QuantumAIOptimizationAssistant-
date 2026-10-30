@@ -1,0 +1,371 @@
+<USER_REQUEST>
+# F17 — REAL CONVERSATIONAL INTELLIGENCE & ADVANCED PERSONAL PLANNING
+
+**Project:** HELIOX AI / Quantum AI Personal Optimization Assistant
+
+**Working directory:** `E:\quantum_life_ai`
+
+## PRIMARY OBJECTIVE
+
+Extend the existing F14, F15, and F16 implementation into a genuinely useful, context-aware personal optimization assistant.
+
+The complete user journey must work:
+
+Natural-language request → Context retrieval → Task understanding → Intelligent scheduling → Explainable proposal → Conversational refinement → User acceptance → Safe database persistence → Updated dashboard.
+
+Implement working functionality. Do not stop after producing an architecture plan, reviewing files, or writing documentation.
+
+Do not turn this phase into a broad verification-only exercise.
+
+## 1. PRESERVE THE EXISTING PROJECT
+
+Before editing, inspect the current Git status and relevant implementation.
+
+Mandatory rules:
+
+- Preserve all modified, untracked, and uncommitted files.
+- Never run `git reset`, `git clean`, `git restore`, or destructive checkout operations.
+- Do not commit or push.
+- Do not delete, merge, overwrite, or migrate existing databases.
+- Preserve the authoritative database configuration established in earlier phases.
+- Preserve authentication, CSRF protection, session security, and user isolation.
+- Reuse working F14–F16 services, APIs, schemas, proposal persistence, and frontend components.
+- Do not duplicate existing intelligence engines or create competing planning pipelines.
+- Do not manufacture training data, feedback, predictions, or benchmark results.
+- Keep benchmark artifacts separate from personal production models and policies.
+- Do not claim capabilities are complete unless implemented.
+
+## 2. IMPLEMENT REAL LLM-POWERED UNDERSTANDING
+
+Inspect the existing AIInteractionLayer, Executive Cognitive Brain, provider configuration, and deterministic parser.
+
+Connect a real LLM provider through a clean, configurable provider abstraction.
+
+Reuse an already configured provider when available. Otherwise, support a provider that can be configured through environment variables without hardcoding credentials.
+
+Requirements:
+
+- Validate provider responses against typed schemas.
+- Use structured output or constrained JSON where supported.
+- Validate dates, durations, priorities, task references, and dependencies.
+- Treat LLM output as untrusted input.
+- Do not let generated text authorize database access or bypass server-side validation.
+- Handle timeouts, rate limits, malformed responses, and unavailable providers.
+- Retain the deterministic F15 parser as a fallback.
+- Clearly identify whether a response used the LLM or deterministic fallback.
+- Never describe rule-based parsing as full general-purpose LLM understanding.
+- Do not expose API keys or sensitive prompts in logs.
+
+Keep basic task management and deterministic planning usable even when the LLM provider is unavailable.
+
+Do not fabricate successful provider calls. If credentials are not configured, implement the integration, explain the required configuration, and demonstrate the deterministic fallback.
+
+## 3. UNDERSTAND COMPLETE REAL-LIFE REQUESTS
+
+Support requests such as:
+
+"I have an assignment due tomorrow, an exam in three days, and a project submission next week. I have four hours available today. Plan my schedule."
+
+Extract and validate:
+
+- Multiple tasks
+- Task titles and descriptions
+- Explicit deadlines
+- Available working time
+- Duration estimates
+- Importance and priority
+- Dependencies
+- Existing task references
+- Relevant goals
+- User scheduling preferences
+- Constraints and uncertainty
+
+Interpret relative dates using the user's configured timezone and the application's established date conventions.
+
+Use a controllable clock for deterministic date interpretation.
+
+Do not invent missing facts. Ask a focused question when missing information materially affects the plan.
+
+Distinguish explicitly provided facts from inferred information.
+
+Retrieve existing tasks and goals when relevant and authorized. Avoid duplicate task proposals and unnecessary questions about information already available.
+
+## 4. BUILD A MORE INTELLIGENT PLANNING ENGINE
+
+Improve the existing F15 scheduler and integrate it with the existing AI Brain and optimization infrastructure.
+
+Evaluate tasks using a documented, configurable decision policy that considers:
+
+- Deadline urgency
+- Importance
+- User-defined priority
+- Estimated duration
+- Dependencies
+- Available time
+- Task completion status
+- Goal alignment when supported
+- Existing scheduling constraints
+- User preferences
+- Duration uncertainty
+
+Do not rely solely on earliest-deadline-first ordering.
+
+Separate mandatory constraints from preferences. Never trade away a mandatory constraint merely to improve a priority score.
+
+The scheduler must:
+
+- Respect the declared scheduling horizon.
+- Reserve complete intervals for multi-hour tasks.
+- Prevent prohibited overlaps.
+- Respect task dependencies.
+- Detect impossible deadlines.
+- Explicitly identify unscheduled tasks.
+- Avoid silently dropping work.
+- Explain important trade-offs.
+- Suggest realistic alternatives for overloaded days.
+
+When all tasks cannot fit, recommend a feasible subset or partial schedule and explain what remains unscheduled.
+
+Never fabricate additional available hours or silently relax constraints.
+
+Use the existing classical optimizer as the reliable baseline. Integrate more advanced optimization only where it improves the quality or feasibility of the resulting plan.
+
+## 5. INTEGRATE EXISTING PERSONAL CONTEXT
+
+Connect planning to the existing task, goal, memory, and behavioral intelligence services.
+
+Retrieve only relevant, authorized, user-scoped information.
+
+Use available information such as:
+
+- Pending tasks
+- Deadlines and priorities
+- Task completion history
+- Goals and dependencies
+- Accepted scheduling preferences
+- Valid historical duration observations
+- Genuine focus, energy, and productivity feedback
+- Validated personal model predictions
+
+Do not indiscriminately inject the entire conversation history or database into every request.
+
+Keep unrelated conversations and users isolated.
+
+Do not fabricate user preferences or behavioral insights.
+
+Where the system has insufficient personal data, produce a useful plan using deterministic methods and clearly identify the estimation source.
+
+## 6. MAKE PERSONAL PREDICTIONS HONEST AND USEFUL
+
+Integrate existing Behavioral Intelligence and model-readiness mechanisms.
+
+For every duration or behavioral prediction, distinguish:
+
+- Explicit user-provided value
+- Existing task estimate
+- Deterministic heuristic
+- Statistical estimate
+- Genuine personal ML prediction
+
+Use validated personal predictions only when the relevant model is eligible and ready.
+
+Preserve existing data-quality gates and minimum training thresholds.
+
+Never lower thresholds simply to make a model appear ready.
+
+Do not promote public benchmark models as personal models.
+
+Do not modify the production RL policy merely to improve benchmark results.
+
+When an ML model is unavailable, continue planning with the existing deterministic fallback.
+
+## 7. MAKE QUANTUM AND HYBRID OPTIMIZATION USEFUL
+
+Reuse the existing QUBO, Ising, QAOA, hybrid optimization, and exact classical reference components.
+
+Use quantum-related methods only when the problem formulation is suitable and supported by the existing implementation.
+
+For candidate schedules:
+
+- Apply the same objective and mandatory constraints.
+- Evaluate feasibility independently.
+- Compare against the classical reference where available.
+- Select the best justified feasible result.
+- Identify the actual execution method and evidence.
+- Fall back to the classical solution when the quantum candidate is unavailable, infeasible, or worse.
+
+Local statevector simulation must be identified as simulation.
+
+Do not claim quantum advantage, speedup, or hardware execution without evidence.
+
+Do not add quantum computation merely to label an otherwise ordinary schedule as quantum optimized.
+
+## 8. IMPLEMENT GROUNDED EXPLANATIONS
+
+Return structured recommendations containing, where applicable:
+
+- Proposed task order
+- Start and end times
+- Estimated duration and source
+- Deadline and dependency considerations
+- Priority rationale
+- Available-time constraints
+- Feasibility status
+- Unscheduled work
+- Important trade-offs
+- Alternative actions
+- Optimization method
+- Relevant prediction provenance
+
+Clearly distinguish user-provided facts, database facts, estimates, predictions, and recommendations.
+
+Ground explanations in actual calculations and available data.
+
+Do not fabricate confidence scores, optimization metrics, personal insights, or reasoning evidence.
+
+Keep ordinary explanations concise and useful.
+
+## 9. COMPLETE CONVERSATIONAL REFINEMENT
+
+Extend the existing persistent F16 proposal lifecycle.
+
+Support follow-ups such as:
+
+"Move the assignment first."
+
+"I only have two hours available now."
+
+"Leave 30 minutes for revision."
+
+"Prioritize the exam instead."
+
+"Show me another feasible option."
+
+"Accept this plan."
+
+Requirements:
+
+- Maintain stable proposal identifiers and versions.
+- Recompute the plan when relevant constraints change.
+- Preserve previous persisted tasks until approval.
+- Ask focused questions when task references are ambiguous.
+- Prevent duplicate task creation.
+- Handle stale proposals and conflicting updates safely.
+- Keep proposals associated with the correct authenticated user and conversation.
+- Revalidate ownership and scheduling feasibility at acceptance.
+- Make acceptance safe against duplicate execution.
+- Persist only approved changes.
+- Return the authoritative saved result to the frontend.
+
+Use the existing database-backed proposal architecture. Do not introduce an unnecessary database or persistence framework.
+
+## 10. CONNECT THE COMPLETE FRONTEND EXPERIENCE
+
+Reuse the existing HELIOX assistant, proposal cards, dashboard, API client, and query invalidation conventions.
+
+Preserve the established dark flagship theme, Aurora light theme, responsive layouts, and navigation.
+
+The user must be able to:
+
+1. Enter a natural-language planning request.
+2. View the interpreted tasks and deadlines.
+3. Review a chronological schedule.
+4. Understand estimates and their sources.
+5. See conflicts and unscheduled tasks.
+6. Refine the plan conversationally.
+7. Accept or reject the proposal.
+8. See accurate confirmation after successful persistence.
+9. See the updated task list and dashboard.
+
+Use real API responses. Do not hardcode successful outcomes.
+
+Show accurate loading, error, empty, and fallback states.
+
+Do not replace working pages or create duplicate dashboards.
+
+## 11. IMPLEMENTATION-FOCUSED TESTING
+
+Test new functionality and directly affected existing workflows.
+
+Cover:
+
+- LLM structured-output validation
+- Provider failure and deterministic fallback
+- Multiple-task interpretation
+- Relative deadlines and timezone handling
+- Relevant context retrieval and user isolation
+- Scheduling constraints and infeasible plans
+- Multi-hour intervals and dependencies
+- Estimate provenance
+- Conversational proposal refinement
+- Acceptance idempotency and duplicate prevention
+- Persistence and frontend state refresh
+- Honest quantum and ML execution provenance
+
+Run relevant backend tests and frontend typecheck/build when applicable.
+
+Fix implementation-related regressions encountered.
+
+Do not repeat unrelated test suites without a concrete reason.
+
+Report actual commands and results. Do not invent successful test outcomes.
+
+## 12. DELIVERABLE
+
+Create:
+
+`phase_f17_real_conversational_intelligence_and_planning.md`
+
+Document:
+
+- Capabilities actually implemented
+- Existing services reused
+- LLM provider configuration and fallback behavior
+- Planning decision policy
+- Personal context and prediction provenance
+- Quantum suitability and candidate selection
+- Frontend integration
+- Actual tests executed
+- Remaining user-visible limitations
+- Files changed
+- Confirmation that databases, uncommitted work, and production policies were preserved
+
+## DEFINITION OF DONE
+
+Prioritize the complete vertical slice:
+
+Natural-language request
+→ LLM understanding or explicit fallback
+→ Relevant personal context
+→ Validated multi-task plan
+→ Feasible schedule
+→ Grounded explanation
+→ Conversational refinement
+→ User approval
+→ Safe persistence
+→ Updated dashboard.
+
+Implement the highest-value working path first, then integrate remaining compatible capabilities.
+
+Do not stop after producing a plan, architecture diagram, or report.
+
+Do not perform another broad verification-only phase.
+
+If a provider credential or external service is unavailable, complete the integration and test the supported fallback without pretending the unavailable path was executed.
+
+Do not commit or push.
+
+BEGIN IMPLEMENTATION.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-10-18T13:20:09+05:30.
+
+The user's current state is as follows:
+Active Document: e:\quantum_life_ai\backend\app\models\plan_proposal.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- e:\quantum_life_ai\backend\app\models\plan_proposal.py (LANGUAGE_PYTHON)
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from None to Claude Opus 4.6 (Thinking). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>

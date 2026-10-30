@@ -286,6 +286,8 @@ class QuantumLifeBrain:
             "task_type": task.task_type,
             "priority": task.priority,
             "estimated_duration": task.estimated_duration,
+            "estimated_duration_unit": task.estimated_duration_unit,
+            "estimated_duration_source": task.estimated_duration_source,
             "actual_duration": task.actual_duration,
             "start_time": task.start_time.isoformat() if task.start_time else None,
             "end_time": task.end_time.isoformat() if task.end_time else None,

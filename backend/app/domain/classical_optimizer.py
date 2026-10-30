@@ -56,8 +56,9 @@ class ClassicalOptimizer:
     validated real-model provenance and a proven task/hour interaction.
     """
 
-    def __init__(self, *, allow_test_matrices: bool = False) -> None:
+    def __init__(self, *, allow_test_matrices: bool = False, allow_fallback: bool = True) -> None:
         self.allow_test_matrices = allow_test_matrices
+        self.allow_fallback = allow_fallback
 
     def optimize(self, matrix: PredictionMatrix) -> ClassicalCandidate:
         matrix = self._validate(matrix)
@@ -94,12 +95,17 @@ class ClassicalOptimizer:
                 "nontriviality_claim": "DEMO_EVIDENCE_ONLY_NOT_REAL_USER_EVIDENCE",
             }
         else:
+            claim = (
+                "PROVEN_FOR_THIS_VALIDATED_MATRIX"
+                if matrix.nontriviality == "PASS"
+                else "SEPARABLE_PREFERENCE_FEASIBLE_SCHEDULE"
+            )
             provenance = {
                 "label": "PRODUCTION_MODEL_PREDICTIONS",
                 "model_version": matrix.model_version,
                 "feature_schema_version": matrix.feature_schema_version,
                 "target_schema_version": matrix.target_schema_version,
-                "nontriviality_claim": "PROVEN_FOR_THIS_VALIDATED_MATRIX",
+                "nontriviality_claim": claim,
             }
         return ClassicalCandidate(
             assignments=results,
@@ -160,7 +166,7 @@ class ClassicalOptimizer:
                 raise ValueError("development/demo matrix has NOT_PROVEN non-triviality")
         elif matrix.mode == "PRODUCTION":
             validated = validate_prediction_matrix(matrix.cells, matrix.task_ids, matrix.candidate_hours)
-            if not validated.optimizer_eligible:
+            if not validated.optimizer_eligible and not self.allow_fallback:
                 raise ValueError("production prediction matrix has NOT_PROVEN non-triviality and is not optimizer eligible")
         else:
             raise ValueError("matrix mode must be PRODUCTION, DEVELOPMENT/DEMO, or TEST/SYNTHETIC")

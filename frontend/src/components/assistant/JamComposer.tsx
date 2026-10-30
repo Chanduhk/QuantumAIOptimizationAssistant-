@@ -37,14 +37,14 @@ export function JamComposer({ onSend, isProcessing }: JamComposerProps) {
   };
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all duration-300 flex items-end p-2 overflow-hidden">
+    <div className="relative w-full max-w-4xl mx-auto rounded-2xl bg-surface-1/90 backdrop-blur-md border border-border/70 shadow-glass focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/50 transition-all duration-200 flex items-end p-2">
       <textarea
         ref={textareaRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Try: plan my day, get recommendations, analyze my productivity..."
-        className="w-full max-h-[200px] bg-transparent text-[var(--color-text)] placeholder-[var(--color-text-muted)] border-none focus:outline-none focus:ring-0 resize-none py-3 px-4 min-h-[48px]"
+        className="w-full max-h-[200px] bg-transparent text-content-primary placeholder:text-content-muted border-none focus:outline-none focus:ring-0 resize-none py-3 px-4 min-h-[48px]"
         rows={1}
         disabled={isProcessing}
         aria-label="Message JAM"
@@ -53,16 +53,21 @@ export function JamComposer({ onSend, isProcessing }: JamComposerProps) {
         <button
           onClick={handleSend}
           disabled={!value.trim() || isProcessing}
-          className="flex items-center justify-center w-10 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:bg-[var(--color-surface-hover)] disabled:text-[var(--color-text-muted)] transition-colors"
+          className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground disabled:opacity-40 disabled:bg-surface-2 disabled:text-content-muted transition-colors shadow-sm"
           aria-label="Send command"
         >
           {isProcessing ? (
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
-            <Send className="w-5 h-5 ml-1" />
+            <Send className="w-4 h-4 ml-0.5" />
           )}
         </button>
       </div>
+      {isProcessing && (
+        <p className="absolute -bottom-6 left-2 text-xs text-content-tertiary" aria-live="polite">
+          JAM is processing the request. Its local memory model may initialize on the first command.
+        </p>
+      )}
     </div>
   );
 }

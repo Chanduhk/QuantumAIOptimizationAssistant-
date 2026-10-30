@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -170,7 +171,7 @@ class ModelRegistry:
         )
         return latest_record
 
-    def promote_model(self, model_name: str, version: int) -> ModelMetadata:
+    def promote_model(self, model_name: str, version: int, *, require_evidence: bool = True) -> ModelMetadata:
         """Promote a staging model to production and demote the current production model."""
         target_record = self.store.get(model_name, version)
         if target_record is None:
@@ -181,6 +182,9 @@ class ModelRegistry:
         current_production = self.get_latest_model(model_name)
         if current_production is not None and current_production.metadata.version == version:
             return self._copy_metadata(current_production.metadata)
+
+        if require_evidence:
+            self._validate_candidate_and_compare_production(target_record, current_production)
 
         if current_production is not None:
             current_production.metadata.status = ModelStatus.STAGING
@@ -297,3 +301,169 @@ class ModelRegistry:
                 **deepcopy(metadata.metrics),
             },
         )
+
+    def _validate_candidate_and_compare_production(
+        self,
+        target_record: ModelRecord,
+        current_production: Optional[ModelRecord],
+    ) -> None:
+        """Validate candidate evaluation metrics and ensure it improves upon current production."""
+        metrics = target_record.metadata.metrics or {}
+        if not metrics:
+            raise ValueError("Candidate model cannot be promoted: missing evaluation metrics.")
+
+        # Evidence requirement: No synthetic or demo data
+        if metrics.get("demo_only") or metrics.get("no_real_training_samples_available"):
+            raise ValueError("Model trained on synthetic or demo data cannot be promoted to production.")
+
+        cand_eval = metrics.get("evaluation_metrics")
+        if not isinstance(cand_eval, dict):
+            cand_eval = metrics
+
+        is_regression = ("mae" in cand_eval or "rmse" in cand_eval)
+
+        if is_regression:
+            cand_mae = cand_eval.get("mae")
+            cand_rmse = cand_eval.get("rmse")
+            cand_mape = cand_eval.get("mape")
+            cand_bias = cand_eval.get("directional_bias")
+
+            if cand_mae is None and cand_rmse is None:
+                raise ValueError("Candidate regression model missing primary error metric (MAE or RMSE).")
+
+            if cand_mae is not None:
+                if not isinstance(cand_mae, (int, float)) or isinstance(cand_mae, bool) or not math.isfinite(cand_mae) or cand_mae < 0:
+                    raise ValueError(f"Candidate model has invalid MAE: {cand_mae}. MAE must be a non-negative finite number.")
+
+            if cand_rmse is not None:
+                if not isinstance(cand_rmse, (int, float)) or isinstance(cand_rmse, bool) or not math.isfinite(cand_rmse) or cand_rmse < 0:
+                    raise ValueError(f"Candidate model has invalid RMSE: {cand_rmse}. RMSE must be a non-negative finite number.")
+
+            if cand_mape is not None:
+                if not isinstance(cand_mape, (int, float)) or isinstance(cand_mape, bool) or not math.isfinite(cand_mape) or cand_mape < 0:
+                    raise ValueError(f"Candidate model has invalid MAPE: {cand_mape}. MAPE must be a non-negative finite number.")
+
+            # Directional bias criterion:
+            # Target ratios center near 1.0. A bias |bias| > 1.5 indicates severe systematic skew.
+            if cand_bias is not None:
+                if not isinstance(cand_bias, (int, float)) or isinstance(cand_bias, bool) or not math.isfinite(cand_bias):
+                    raise ValueError(f"Candidate model has invalid directional_bias: {cand_bias}.")
+                if abs(cand_bias) > 1.5:
+                    raise ValueError(
+                        f"Candidate directional bias {cand_bias:.4f} exceeds allowable safety threshold (|bias| <= 1.5)."
+                    )
+
+            # Evaluation sample count requirement: at least 3 hold-out evaluation samples
+            # are strictly required to reliably compare candidate against production.
+            MINIMUM_EVALUATION_SAMPLES_FOR_PROMOTION = 3
+            sample_count = cand_eval.get("sample_count")
+            if sample_count is None:
+                sample_count = cand_eval.get("validation_sample_count")
+            if sample_count is None:
+                sample_count = metrics.get("validation_sample_count")
+            if sample_count is not None:
+                if not isinstance(sample_count, int) or isinstance(sample_count, bool) or sample_count < MINIMUM_EVALUATION_SAMPLES_FOR_PROMOTION:
+                    raise ValueError(
+                        f"Candidate model has insufficient evaluation data (sample count: {sample_count} < {MINIMUM_EVALUATION_SAMPLES_FOR_PROMOTION}). "
+                        f"At least {MINIMUM_EVALUATION_SAMPLES_FOR_PROMOTION} hold-out validation samples are required for a statistically defensible evaluation."
+                    )
+
+            if current_production is not None:
+                prod_metrics = current_production.metadata.metrics or {}
+                prod_eval = prod_metrics.get("evaluation_metrics")
+                if not isinstance(prod_eval, dict):
+                    prod_eval = prod_metrics
+
+                prod_is_regression = ("mae" in prod_eval or "rmse" in prod_eval)
+                if not prod_is_regression:
+                    raise ValueError("Incompatible model evaluation types: cannot compare regression candidate against non-regression production model.")
+
+                # Target definition compatibility check
+                cand_target = metrics.get("target_schema_version") or metrics.get("target_name")
+                prod_target = prod_metrics.get("target_schema_version") or prod_metrics.get("target_name")
+                if cand_target and prod_target and cand_target != prod_target:
+                    raise ValueError(
+                        f"Incompatible target definitions: candidate evaluates '{cand_target}' while production evaluates '{prod_target}'."
+                    )
+
+                # Evaluation protocol compatibility check
+                cand_proto = metrics.get("evaluation_protocol")
+                prod_proto = prod_metrics.get("evaluation_protocol")
+                if cand_proto and prod_proto and cand_proto != prod_proto:
+                    raise ValueError(
+                        f"Incompatible evaluation protocols: candidate used '{cand_proto}' while production used '{prod_proto}'."
+                    )
+
+                prod_mae = prod_eval.get("mae")
+                prod_rmse = prod_eval.get("rmse")
+
+                if cand_mae is not None and prod_mae is not None:
+                    if cand_mae > prod_mae:
+                        raise ValueError(
+                            f"Candidate model is inferior: candidate MAE ({cand_mae:.4f}) > production MAE ({prod_mae:.4f})."
+                        )
+                    elif cand_mae == prod_mae:
+                        # Secondary comparison: RMSE
+                        if cand_rmse is not None and prod_rmse is not None:
+                            if cand_rmse > prod_rmse:
+                                raise ValueError(
+                                    f"Candidate model is inferior: equal MAE but candidate RMSE ({cand_rmse:.4f}) > production RMSE ({prod_rmse:.4f})."
+                                )
+                            elif cand_rmse == prod_rmse:
+                                prod_bias = prod_eval.get("directional_bias")
+                                if cand_bias is not None and prod_bias is not None:
+                                    if abs(cand_bias) >= abs(prod_bias):
+                                        raise ValueError(
+                                            f"Candidate model does not improve on approved production model (equal error and bias |{cand_bias:.4f}| >= |{prod_bias:.4f}|)."
+                                        )
+                                else:
+                                    raise ValueError("Candidate model does not improve on approved production model (equal error metrics).")
+                        else:
+                            raise ValueError("Candidate model does not improve on approved production model (equal MAE).")
+                elif cand_rmse is not None and prod_rmse is not None:
+                    if cand_rmse >= prod_rmse:
+                        raise ValueError(
+                            f"Candidate model is inferior or equal: candidate RMSE ({cand_rmse:.4f}) >= production RMSE ({prod_rmse:.4f})."
+                        )
+                else:
+                    raise ValueError("Incompatible regression metrics: candidate and production do not share comparable MAE or RMSE.")
+        else:
+            # Classification / general score model
+            cand_score = target_record.metadata.accuracy_score
+            if not isinstance(cand_score, (int, float)) or isinstance(cand_score, bool) or not math.isfinite(cand_score) or cand_score < 0:
+                raise ValueError("Model with negative accuracy/validation score cannot be promoted to production.")
+
+            if current_production is not None:
+                prod_metrics = current_production.metadata.metrics or {}
+                prod_eval = prod_metrics.get("evaluation_metrics")
+                if not isinstance(prod_eval, dict):
+                    prod_eval = prod_metrics
+                if "mae" in prod_eval or "rmse" in prod_eval:
+                    raise ValueError("Incompatible model evaluation types: cannot compare non-regression candidate against regression production model.")
+
+                prod_score = current_production.metadata.accuracy_score
+                if cand_score <= prod_score:
+                    raise ValueError(
+                        f"Candidate model '{target_record.metadata.model_name}' version {target_record.metadata.version} with score {cand_score:.4f} "
+                        f"is inferior to current production version {current_production.metadata.version} with score {prod_score:.4f} and cannot replace it."
+                    )
+
+
+_SHARED_REGISTRY: Optional[ModelRegistry] = None
+_REGISTRY_LOCK = RLock()
+
+
+def get_model_registry() -> ModelRegistry:
+    """Return the shared singleton ModelRegistry instance."""
+    global _SHARED_REGISTRY
+    with _REGISTRY_LOCK:
+        if _SHARED_REGISTRY is None:
+            _SHARED_REGISTRY = ModelRegistry()
+        return _SHARED_REGISTRY
+
+
+def reset_model_registry() -> None:
+    """Reset the shared singleton registry (for isolated test runs)."""
+    global _SHARED_REGISTRY
+    with _REGISTRY_LOCK:
+        _SHARED_REGISTRY = None

@@ -8,7 +8,9 @@ from sqlalchemy.pool import StaticPool
 
 import backend.main as main
 from backend.app.database.db import get_db
+from backend.app.engines.brain_workflow import QuantumLifeBrain
 from backend.app.models.base import Base
+from backend.app.models.task import Task
 from backend.app.services.auth_service import CSRF_COOKIE
 
 
@@ -52,6 +54,26 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
     token = client.cookies.get(CSRF_COOKIE)
     assert token
     return {"X-CSRF-Token": token}
+
+
+def test_brain_workflow_preserves_estimate_duration_provenance():
+    brain = QuantumLifeBrain.__new__(QuantumLifeBrain)
+    task = Task(
+        id=42,
+        user_id=7,
+        title="Explicit estimate",
+        task_type="focus",
+        priority=3,
+        estimated_duration=30,
+        estimated_duration_unit="minutes",
+        estimated_duration_source="task_api",
+    )
+
+    serialized = brain._serialize_task(task)
+
+    assert serialized["estimated_duration"] == 30
+    assert serialized["estimated_duration_unit"] == "minutes"
+    assert serialized["estimated_duration_source"] == "task_api"
 
 
 def test_authenticated_task_lifecycle_and_user_isolation(authenticated_environment):

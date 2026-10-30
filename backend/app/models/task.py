@@ -24,6 +24,11 @@ class Task(Base):
     end_time = Column(DateTime, nullable=True)
     completed = Column(Boolean, nullable=False, default=False, index=True)
     outcome_valid = Column(Boolean, nullable=True)
+    focus_rating = Column(Float, nullable=True)
+    energy_rating = Column(Float, nullable=True)
+    productivity_rating = Column(Float, nullable=True)
+    feedback_notes = Column(String(1000), nullable=True)
+    feedback_submitted_at = Column(DateTime, nullable=True)
 
     behavior_records = relationship(
         "BehaviorData",

@@ -50,10 +50,15 @@ class ProductivityModel:
         self.feature_names = list(self.FEATURE_NAMES)
         self.metadata: Optional[Dict[str, Any]] = None
         self.compatibility_status = "UNTRAINED"
+        self.readiness_status = "NOT_READY_NO_GROUND_TRUTH_LABELS"
+        self.demo_mode = False
         self.task_type_encoder: Optional[LabelEncoder] = None
         self.training_data_shape: Optional[tuple] = None
 
         if model_path and Path(model_path).exists():
+            if "demo" in str(model_path).lower():
+                self.demo_mode = True
+                self.readiness_status = "DEMO_ONLY"
             self.load(model_path)
 
     def train(self, data: Union[pd.DataFrame, Dict[str, Any]]) -> Dict[str, Any]:

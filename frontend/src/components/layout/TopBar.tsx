@@ -5,7 +5,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useUIStore } from "@/stores/uiStore";
 import { StatusIndicator } from "@/components/ui/StatusIndicator";
 import { api } from "@/api/endpoints";
-import { CURRENT_USER_QUERY_KEY, useCurrentUser } from "@/api/hooks";
+import { CURRENT_USER_QUERY_KEY, useCurrentUser, useSystemHealth } from "@/api/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { getApiErrorMessage } from "@/api/client";
 import { useUserStore } from "@/stores/userStore";
@@ -13,22 +13,24 @@ import { useToastStore } from "@/stores/toastStore";
 import { useJamStore } from "@/stores/jamStore";
 
 const routeNames: Record<string, string> = {
-  "/": "Dashboard",
-  "/assistant": "JAM Assistant",
-  "/tasks": "Tasks",
-  "/planning": "Planning",
-  "/optimization": "Optimization",
-  "/intelligence": "Intelligence",
+  "/": "Home",
+  "/assistant": "Ask JAM",
+  "/tasks": "My Tasks",
+  "/planning": "My Schedule",
+  "/intelligence": "My Insights",
+  "/optimization": "Optimization Lab",
   "/data-learning": "Data & Learning",
   "/quantum": "Quantum Workspace",
   "/settings": "Settings",
-  "/status": "System Status",
+  "/status": "System Diagnostics",
 };
 
 export function TopBar() {
   const location = useLocation();
   const { toggleSidebar, theme, setTheme } = useUIStore();
   const { data: currentUser } = useCurrentUser();
+  const systemHealth = useSystemHealth();
+  const apiHealthy = systemHealth.data?.status === "operational" && systemHealth.data.database_connected === true;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const setUserId = useUserStore((state) => state.setUserId);
@@ -53,8 +55,8 @@ export function TopBar() {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-md">
-      <div className="flex items-center gap-4">
+    <header className="sticky top-0 z-30 flex h-16 w-full shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-surface-1/70 px-2 backdrop-blur-xl sm:px-4 shadow-sm">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-4">
         {/* Mobile Sidebar Toggle */}
         <div className="md:hidden">
           <IconButton variant="ghost" onClick={toggleSidebar} aria-label="Open sidebar">
@@ -73,9 +75,11 @@ export function TopBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-3">
         {/* Command Palette Trigger */}
         <button
+          type="button"
+          aria-label="Open search and navigation"
           className="hidden md:flex items-center gap-4 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-3 hover:text-content-primary focus:outline-none focus:ring-2 focus:ring-primary"
           onClick={() => {
             document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
@@ -92,7 +96,7 @@ export function TopBar() {
 
         {/* Mobile Search Trigger */}
         <div className="md:hidden">
-          <IconButton variant="ghost" onClick={() => {
+          <IconButton variant="ghost" aria-label="Open search and navigation" onClick={() => {
             document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
           }}>
             <Search className="h-5 w-5" />
@@ -102,9 +106,11 @@ export function TopBar() {
         <div className="h-6 w-px bg-border mx-1"></div>
 
         {/* System Status Indicator */}
-        <div className="flex items-center gap-2 px-2" title="System Operational">
-          <StatusIndicator status="online" pulse />
-          <span className="hidden sm:inline text-xs font-medium text-status-success">Online</span>
+        <div className="flex items-center gap-2 px-2" title={systemHealth.isError ? "API health unavailable" : `API ${systemHealth.data?.status ?? "check pending"}; database ${systemHealth.data?.database_connected === true ? "connected" : systemHealth.data?.database_connected === false ? "disconnected" : "status unavailable"}`}>
+          <StatusIndicator status={systemHealth.isError ? "offline" : systemHealth.isLoading ? "loading" : apiHealthy ? "online" : "warning"} pulse={apiHealthy} />
+          <span className={`hidden sm:inline text-xs font-medium ${systemHealth.isError ? "text-status-error" : apiHealthy ? "text-status-success" : "text-status-warning"}`}>
+            {systemHealth.isError ? "API unavailable" : systemHealth.isLoading ? "Checking API" : apiHealthy ? "Operational" : systemHealth.data?.database_connected === false ? "Database unavailable" : "Status incomplete"}
+          </span>
         </div>
 
         <div className="h-6 w-px bg-border mx-1"></div>
@@ -115,6 +121,8 @@ export function TopBar() {
             onClick={() => setTheme("system")}
             className={`p-1.5 rounded-sm transition-colors ${theme === "system" ? "bg-surface-3 text-content-primary" : "text-content-tertiary hover:text-content-secondary"}`}
             title="System Theme"
+            aria-label="Use system theme"
+            aria-pressed={theme === "system"}
           >
             <Monitor className="h-4 w-4" />
           </button>
@@ -122,6 +130,8 @@ export function TopBar() {
             onClick={() => setTheme("aurora")}
             className={`p-1.5 rounded-sm transition-colors ${theme === "aurora" ? "bg-surface-3 text-content-primary" : "text-content-tertiary hover:text-content-secondary"}`}
             title="Aurora (Light)"
+            aria-label="Use light theme"
+            aria-pressed={theme === "aurora"}
           >
             <Sun className="h-4 w-4" />
           </button>
@@ -129,12 +139,14 @@ export function TopBar() {
             onClick={() => setTheme("obsidian")}
             className={`p-1.5 rounded-sm transition-colors ${theme === "obsidian" ? "bg-surface-3 text-content-primary" : "text-content-tertiary hover:text-content-secondary"}`}
             title="Obsidian (Dark)"
+            aria-label="Use dark theme"
+            aria-pressed={theme === "obsidian"}
           >
             <Moon className="h-4 w-4" />
           </button>
         </div>
 
-        <IconButton variant="ghost" aria-label="Notifications">
+        <IconButton variant="ghost" aria-label="Notifications are not available yet" disabled>
           <Bell className="h-5 w-5" />
         </IconButton>
 

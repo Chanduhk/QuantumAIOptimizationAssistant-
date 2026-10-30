@@ -1,15 +1,21 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 const { sendCommand } = vi.hoisted(() => ({ sendCommand: vi.fn() }));
 
 vi.mock("@/api/hooks", () => ({
   useAICommand: () => ({ mutateAsync: sendCommand }),
+  useProviderStatus: () => ({ data: undefined }),
 }));
 
 import { AssistantPage } from "@/pages/AssistantPage";
 import { useJamStore } from "@/stores/jamStore";
 import { useUserStore } from "@/stores/userStore";
+
+function renderAssistant() {
+  return render(<MemoryRouter><AssistantPage /></MemoryRouter>);
+}
 
 describe("JAM assistant session", () => {
   beforeEach(() => {
@@ -21,7 +27,7 @@ describe("JAM assistant session", () => {
   it("shows an immediate message, blocks duplicate sends, and renders the response", async () => {
     let resolveRequest!: (value: { intent: string; result: Record<string, unknown> }) => void;
     sendCommand.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
-    render(<AssistantPage />);
+    renderAssistant();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Message JAM" }), {
       target: { value: "get recommendations" },
@@ -30,6 +36,7 @@ describe("JAM assistant session", () => {
 
     expect(screen.getAllByText("get recommendations")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent("JAM is processing");
+    expect(screen.getByText(/local memory model may initialize on the first command/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send command" })).toBeDisabled();
     expect(sendCommand).toHaveBeenCalledTimes(1);
 
@@ -41,7 +48,7 @@ describe("JAM assistant session", () => {
     sendCommand
       .mockRejectedValueOnce(new Error("Temporary service error"))
       .mockResolvedValueOnce({ intent: "get_recommendations", result: { answer: "Recovered" } });
-    render(<AssistantPage />);
+    renderAssistant();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Message JAM" }), {
       target: { value: "get recommendations" },
@@ -57,7 +64,7 @@ describe("JAM assistant session", () => {
   it("clears conversation on account change and ignores a stale response", async () => {
     let resolveRequest!: (value: { intent: string; result: Record<string, unknown> }) => void;
     sendCommand.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve; }));
-    render(<AssistantPage />);
+    renderAssistant();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Message JAM" }), {
       target: { value: "get recommendations" },

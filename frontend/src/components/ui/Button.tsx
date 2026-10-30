@@ -13,11 +13,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const baseStyles = "inline-flex items-center justify-center font-medium transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50 disabled:pointer-events-none rounded-md active:scale-[0.98]";
     
     const variants = {
-      primary: "bg-primary text-primary-foreground hover:bg-primary-hover shadow-sm hover:shadow-md",
-      secondary: "bg-surface-2 text-content-primary border border-border hover:bg-surface-3 hover:border-border-subtle",
-      ghost: "hover:bg-surface-2 text-content-secondary hover:text-content-primary",
-      danger: "bg-status-error/10 text-status-error hover:bg-status-error/20 border border-status-error/20",
-      quantum: "bg-quantum text-quantum-foreground hover:bg-quantum/90 shadow-sm hover:shadow-md"
+      primary: "bg-primary text-primary-foreground hover:bg-primary-hover shadow-sm hover:shadow-md font-medium tracking-wide",
+      secondary: "bg-surface-2/80 backdrop-blur-sm text-content-primary border border-border/80 hover:bg-surface-3 hover:border-border-subtle",
+      ghost: "hover:bg-surface-2/70 text-content-secondary hover:text-content-primary",
+      danger: "bg-status-error/15 text-status-error hover:bg-status-error/25 border border-status-error/25",
+      quantum: "bg-quantum/90 text-quantum-foreground hover:bg-quantum shadow-sm hover:shadow-md font-medium"
     };
 
     const sizes = {

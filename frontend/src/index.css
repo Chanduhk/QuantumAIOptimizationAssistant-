@@ -5,90 +5,172 @@
 @layer base {
   :root {
     /* 
-      HELIOX AURORA (Light Theme)
-      Luminous, clean, premium, precise.
+      HELIOX AURORA (Luminous Starlight Theme)
+      Crisp, pearl-white, calm, celestial clarity.
     */
-    --background: 210 20% 98%;
+    --background: 220 25% 97%;
     
     /* Surfaces */
     --surface-1: 0 0% 100%;
-    --surface-2: 210 16% 96%;
-    --surface-3: 210 14% 92%;
+    --surface-2: 220 20% 95%;
+    --surface-3: 220 18% 90%;
     
     /* Borders */
-    --border: 214 32% 91%;
-    --border-subtle: 214 32% 95%;
+    --border: 220 22% 88%;
+    --border-subtle: 220 22% 93%;
     
     /* Typography */
-    --content-primary: 222 47% 11%;
-    --content-secondary: 215 16% 47%;
-    --content-tertiary: 215 16% 65%;
-    --content-muted: 215 16% 75%;
+    --content-primary: 228 45% 12%;
+    --content-secondary: 224 18% 44%;
+    --content-tertiary: 222 14% 58%;
+    --content-muted: 220 12% 70%;
     
     /* Accents */
-    --primary: 221 83% 53%; 
-    --primary-hover: 221 83% 48%;
+    --primary: 218 78% 46%; 
+    --primary-hover: 218 78% 40%;
     --primary-foreground: 210 40% 98%;
     
-    /* Quantum */
-    --quantum: 262 83% 58%;
+    /* Quantum / Cosmic */
+    --quantum: 248 55% 52%;
     --quantum-foreground: 210 40% 98%;
     
     /* Status */
-    --success: 142 71% 45%;
-    --warning: 38 92% 50%;
-    --error: 348 83% 47%;
-    --info: 214 95% 54%;
+    --success: 152 65% 38%;
+    --warning: 38 85% 44%;
+    --error: 352 70% 46%;
+    --info: 214 80% 46%;
     
     /* Focus Ring */
-    --ring: 221 83% 53%;
-    --radius: 0.5rem;
+    --ring: 218 78% 46%;
+    --radius: 0.625rem;
   }
 
   .dark {
     /* 
-      HELIOX OBSIDIAN (Dark Theme)
-      Deep, premium, technical, calm, intelligent.
+      HELIOX MILKY WAY GALAXY (Premium Space & Celestial Theme)
+      Space-black, deep midnight navy, soft cosmic indigo, pearl-white typography.
+      No neon cyan, no electric purple, no harsh glow.
     */
-    --background: 222 47% 7%;
+    --background: 230 45% 3.5%;
     
     /* Surfaces */
-    --surface-1: 222 47% 11%;
-    --surface-2: 217 33% 17%;
-    --surface-3: 215 28% 22%;
+    --surface-1: 228 38% 7.8%;
+    --surface-2: 226 28% 11.8%;
+    --surface-3: 224 22% 16.5%;
     
     /* Borders */
-    --border: 217 33% 20%;
-    --border-subtle: 222 47% 14%;
+    --border: 224 22% 19%;
+    --border-subtle: 226 25% 12%;
     
     /* Typography */
-    --content-primary: 210 40% 98%;
-    --content-secondary: 215 20% 65%;
-    --content-tertiary: 215 16% 50%;
-    --content-muted: 215 16% 40%;
+    --content-primary: 216 33% 97%;
+    --content-secondary: 218 18% 75%;
+    --content-tertiary: 220 15% 58%;
+    --content-muted: 220 12% 42%;
     
-    /* Accents */
-    --primary: 217 91% 60%;
-    --primary-hover: 217 91% 65%;
-    --primary-foreground: 222 47% 7%;
+    /* Accents: Muted Celestial Blue & Soft Cosmic Indigo */
+    --primary: 214 70% 64%;
+    --primary-hover: 214 75% 72%;
+    --primary-foreground: 230 45% 5%;
     
-    /* Quantum */
-    --quantum: 262 83% 68%;
-    --quantum-foreground: 222 47% 7%;
+    /* Quantum: Soft Cosmic Indigo */
+    --quantum: 245 48% 66%;
+    --quantum-foreground: 230 45% 5%;
     
-    /* Status */
-    --success: 142 71% 45%;
-    --warning: 38 92% 50%;
-    --error: 348 83% 47%;
-    --info: 217 91% 60%;
+    /* Status: Balanced celestial tones */
+    --success: 152 52% 52%;
+    --warning: 36 72% 56%;
+    --error: 352 62% 58%;
+    --info: 214 70% 64%;
     
     /* Focus Ring */
-    --ring: 217 91% 60%;
+    --ring: 214 70% 64%;
   }
+}
+
+/* Subtle Milky Way / Cosmic Dust Atmosphere */
+.milky-way-atmosphere {
+  position: relative;
+  background-color: hsl(var(--background));
+  background-image: 
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(56, 88, 142, 0.12), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 85% 15%, rgba(76, 68, 130, 0.08), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 15% 85%, rgba(42, 65, 110, 0.07), transparent 65%);
+}
+
+.neural-core-fallback {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 48% 48%, rgba(98, 138, 202, 0.18), rgba(88, 76, 148, 0.12) 42%, rgba(5, 7, 14, 0.96) 74%);
+  box-shadow: 0 0 40px rgba(78, 115, 180, 0.12), inset 0 0 30px rgba(96, 84, 160, 0.1);
+}
+
+.neural-core-fallback::after {
+  position: absolute;
+  inset: 10%;
+  border: 1px solid rgba(148, 185, 240, 0.2);
+  border-radius: inherit;
+  content: "";
+  animation: heliox-core-breathe 6s ease-in-out infinite alternate;
+}
+
+.liquid-glass-card {
+  position: relative;
+  background: hsl(var(--surface-1) / 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid hsl(var(--border) / 0.7);
+  box-shadow: 0 4px 20px -2px rgba(2, 4, 10, 0.3);
+}
+
+.liquid-glass-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08) 30%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.08) 70%, transparent);
+  pointer-events: none;
+}
+
+.heliox-pipeline-stage {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.heliox-pipeline-stage:hover,
+.heliox-pipeline-stage:focus-within {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(10, 20, 45, 0.25);
+  border-color: hsl(var(--primary) / 0.35);
+}
+
+@keyframes heliox-core-breathe {
+  from { transform: scale(.98); opacity: .45; }
+  to { transform: scale(1.02); opacity: .75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neural-core-fallback::after { animation: none; }
+  .heliox-pipeline-stage { transition: none; transform: none; }
 }
 
 @layer base {
   body {
-    @apply bg-background text-content-primary font-sans antialiased;
+    @apply bg-background text-content-primary font-sans antialiased selection:bg-primary/20 selection:text-content-primary;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
   }
 }
+
+@layer utilities {
+  .modal-viewport-height {
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+  }
+}
+

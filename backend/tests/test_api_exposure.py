@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 
+import numpy as np
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -126,6 +127,29 @@ class TestAPIExposure(unittest.TestCase):
         response = self.client.post("/api/v1/ai/executive-plan", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["result"]["executive_summary"], "Test summary")
+
+    @patch("backend.app.orchestrator.ai_orchestrator.AIOrchestrator.execute_executive_planning")
+    def test_executive_plan_normalizes_nested_numpy_response_values(self, mock_execute: MagicMock) -> None:
+        mock_execute.return_value = {
+            "behavior": {
+                "best_focus_hours": [np.int64(9), np.int32(11)],
+                "scores": np.asarray([np.float32(0.75), np.float64(0.5)]),
+                "ready": np.bool_(True),
+            }
+        }
+        response = self.client.post(
+            "/api/v1/ai/executive-plan",
+            json={
+                "user_id": self.user_id,
+                "tasks": [{"title": "Task 1", "type": "coding", "priority": 1, "duration": 30.0}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["result"]["behavior"]["best_focus_hours"], [9, 11])
+        self.assertEqual(payload["result"]["behavior"]["scores"], [0.75, 0.5])
+        self.assertIs(payload["result"]["behavior"]["ready"], True)
 
     @patch("backend.app.orchestrator.ai_orchestrator.AIOrchestrator.execute_executive_planning")
     def test_executive_plan_preserves_task_identity_and_duration_provenance(self, mock_execute: MagicMock) -> None:

@@ -4,6 +4,7 @@ import math
 from dataclasses import asdict
 from typing import Any, Dict, List
 
+from backend.app.domain.optimization_input_contract import normalize_duration
 from backend.app.domain.executive_resource_model import (
     AttentionAllocation,
     CapacityForecast,
@@ -347,7 +348,12 @@ class ExecutiveResourceEngine:
         return round(self._clamp((hours / 8.0) * 100.0, 0.0, 100.0), 2)
 
     def _duration(self, task: Dict[str, Any]) -> float:
-        return self._clamp(self._score(task.get("estimated_duration", task.get("duration", 1.0)), 0.0, 24.0), 0.0, 24.0)
+        value = task.get("estimated_duration", task.get("duration", 1.0))
+        unit = task.get("estimated_duration_unit")
+        if unit is not None:
+            source = task.get("estimated_duration_source")
+            value = normalize_duration(value, unit, source).normalized_hours
+        return self._clamp(self._score(value, 0.0, 24.0), 0.0, 24.0)
 
     def _conflict(self, conflict_type: str, resource: str, impact: float, description: str, action: str) -> ResourceConflict:
         impact_score = self._clamp(impact, 0.0, 100.0)

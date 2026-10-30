@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import io
+import logging
+import os
 from pathlib import Path
 from contextlib import redirect_stderr
+from threading import Event, Lock, Thread
 from typing import Any, Dict, List, Optional
+from time import perf_counter
 
 import numpy as np
 
@@ -17,6 +21,12 @@ except ImportError:  # pragma: no cover - runtime fallback
 class VectorMemorySystem:
     """Semantic task memory using embeddings with FAISS-backed retrieval when available."""
 
+    _model_cache: Dict[str, Any] = {}
+    _model_cache_lock = Lock()
+    _model_load_started: set[str] = set()
+    _model_load_events: Dict[str, Event] = {}
+    _logger = logging.getLogger(__name__)
+
     def __init__(
         self,
         storage_directory: Optional[str] = None,
@@ -24,10 +34,12 @@ class VectorMemorySystem:
     ) -> None:
         self.storage_directory = Path(
             storage_directory
+            or os.getenv("HELIOX_VECTOR_MEMORY_DIR")
             or Path(__file__).resolve().parents[2] / "artifacts" / "vector_memory"
         )
         self.records_path = self.storage_directory / "memory_records.json"
         self.embeddings_path = self.storage_directory / "memory_embeddings.npy"
+        self.embedding_metadata_path = self.storage_directory / "memory_embedding_metadata.json"
         self.index_path = self.storage_directory / "memory_faiss.index"
         self.model_name = model_name
         self.records: List[Dict[str, Any]] = []
@@ -105,11 +117,70 @@ class VectorMemorySystem:
     def _load_model(self) -> Optional[Any]:
         if not self.model_name:
             return None
+        with self._model_cache_lock:
+            if self.model_name in self._model_cache:
+                return self._model_cache[self.model_name]
+            if self.model_name in self._model_load_started:
+                # A request arriving during local model warm-up uses the existing
+                # deterministic embedding fallback instead of blocking on import.
+                return None
+            self._model_load_started.add(self.model_name)
+            self._model_load_events[self.model_name] = Event()
+
+        # Start warm-up asynchronously so instantiation never blocks for ~50 seconds on cold import
+        Thread(target=self._load_model_and_publish, name="heliox-local-embedding-warmup", daemon=True).start()
+        return None
+
+    @classmethod
+    def preload_model_async(cls, model_name: str = "all-MiniLM-L6-v2") -> None:
+        """Warm a local model in the background without blocking an API request."""
+        with cls._model_cache_lock:
+            if model_name in cls._model_cache or model_name in cls._model_load_started:
+                return
+            cls._model_load_started.add(model_name)
+            cls._model_load_events[model_name] = Event()
+
+        cls._logger.info("Starting one-time local-only embedding model initialization: model=%s", model_name)
+        loader = cls.__new__(cls)
+        loader.model_name = model_name
+        Thread(target=loader._load_model_and_publish, name="heliox-local-embedding-warmup", daemon=True).start()
+
+    @classmethod
+    def wait_for_model_load(cls, model_name: str, timeout: float | None = None) -> bool:
+        """Wait for model-load completion; primarily useful to deterministic tests."""
+        with cls._model_cache_lock:
+            event = cls._model_load_events.get(model_name)
+        return event.wait(timeout) if event is not None else model_name in cls._model_cache
+
+    def _load_model_and_publish(self) -> Optional[Any]:
+        assert self.model_name is not None
+        started = perf_counter()
+        try:
+            model = self._load_model_uncached()
+        except Exception:
+            self._logger.exception("Local-only embedding model initialization failed; deterministic fallback remains active.")
+            model = None
+        with self._model_cache_lock:
+            self._model_cache[self.model_name] = model
+            event = self._model_load_events.get(self.model_name)
+            if event is not None:
+                event.set()
+        self._logger.info(
+            "Local-only embedding model initialization completed: available=%s elapsed_seconds=%.3f",
+            model is not None,
+            perf_counter() - started,
+        )
+        return model
+
+    def _load_model_uncached(self) -> Optional[Any]:
         try:
             with redirect_stderr(io.StringIO()):
                 from sentence_transformers import SentenceTransformer
 
-                return SentenceTransformer(self.model_name)
+                # Runtime request paths must never trigger a Hub lookup/retry.
+                # The project already has a deterministic local embedding
+                # fallback when this model is not cached on the machine.
+                return SentenceTransformer(self.model_name, local_files_only=True)
         except Exception:
             return None
 
@@ -163,12 +234,22 @@ class VectorMemorySystem:
         if self.records_path.exists():
             self.records = json.loads(self.records_path.read_text(encoding="utf-8"))
 
-        if self.embeddings_path.exists():
-            self.embedding_matrix = np.load(self.embeddings_path).astype(np.float32)
+        embedding_mode = self._embedding_mode()
+        try:
+            stored_mode = json.loads(self.embedding_metadata_path.read_text(encoding="utf-8")).get("mode")
+        except (OSError, ValueError, AttributeError):
+            stored_mode = None
 
-        if self.embedding_matrix.size == 0 and self.records:
+        if self.embeddings_path.exists() and stored_mode == embedding_mode:
+            self.embedding_matrix = np.load(self.embeddings_path).astype(np.float32)
+        elif self.records:
+            # Rebuild derived vectors when the embedding provider changes. This
+            # preserves memory records without mixing fallback and model spaces.
             descriptions = [record["task_description"] for record in self.records]
             self.embedding_matrix = self._embed(descriptions)
+            self._persist()
+        elif self.embeddings_path.exists() and stored_mode == embedding_mode:
+            self.embedding_matrix = np.load(self.embeddings_path).astype(np.float32)
 
         if faiss is not None and self.index_path.exists():
             try:
@@ -182,5 +263,12 @@ class VectorMemorySystem:
         self.storage_directory.mkdir(parents=True, exist_ok=True)
         self.records_path.write_text(json.dumps(self.records, indent=2), encoding="utf-8")
         np.save(self.embeddings_path, self.embedding_matrix.astype(np.float32))
+        self.embedding_metadata_path.write_text(
+            json.dumps({"mode": self._embedding_mode()}, indent=2),
+            encoding="utf-8",
+        )
         if faiss is not None and self.index is not None and hasattr(self.index, "ntotal"):
             faiss.write_index(self.index, str(self.index_path))
+
+    def _embedding_mode(self) -> str:
+        return f"sentence_transformer:{self.model_name}" if self.model is not None else "deterministic_fallback"

@@ -1,0 +1,24 @@
+{
+  "dataset_id": "uci-garment-productivity",
+  "name": "Productivity Prediction of Garment Employees",
+  "source_url": "https://archive.ics.uci.edu/static/public/597/productivity+prediction+of+garment+employees.zip",
+  "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "citation": "Al-Amin, M., et al. (2020). Productivity Prediction of Garment Employees. UCI Machine Learning Repository.",
+  "domain": "Workplace activity and team productivity benchmarks",
+  "is_personalized": false,
+  "target_name": "actual_productivity (scaled 0-100 score)",
+  "target_semantics": "objective_workplace_productivity_ratio_scaled_0_100",
+  "total_records": 1197,
+  "train_records": 837,
+  "val_records": 179,
+  "test_records": 181,
+  "sha256_checksum": "446026846b37d73800d1fd01b852ceaf95f086f15a626802d784154f63885bc2",
+  "download_timestamp_utc": "2026-10-17T11:36:03.683392+00:00",
+  "files": [
+    "raw_garments_worker_productivity.csv",
+    "train.csv",
+    "val.csv",
+    "test.csv",
+    "provenance.json"
+  ]
+}

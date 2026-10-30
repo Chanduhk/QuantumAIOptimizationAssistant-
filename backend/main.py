@@ -1,7 +1,21 @@
 import os
+from collections.abc import Mapping
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal
 
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded reliably regardless of execution working directory
+_backend_env = Path(__file__).resolve().parent / ".env"
+if _backend_env.exists():
+    load_dotenv(_backend_env)
+_root_env = Path(__file__).resolve().parents[1] / ".env"
+if _root_env.exists():
+    load_dotenv(_root_env)
+load_dotenv()
+
+import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -12,6 +26,7 @@ from backend.app.adaptive import AdaptiveScheduler
 from backend.app.database.db import create_tables, get_db
 from backend.app.engines import QuantumLifeBrain
 from backend.app.interface import AIInteractionLayer
+from backend.app.memory import VectorMemorySystem
 from backend.app.learning import AutonomousLearningLoop
 from backend.app.orchestrator import AIOrchestrator
 from backend.app.pipeline import DecisionPipeline
@@ -134,6 +149,19 @@ class CommandRequest(BaseModel):
     user_id: int = Field(..., ge=1)
     command: str = Field(..., min_length=1)
     days_back: int = Field(default=90, ge=1, le=3650)
+    conversation_id: Optional[str] = None
+
+
+class AcceptPlanRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    schedule: Optional[List[Dict[str, Any]]] = None
+    proposal_id: Optional[str] = None
+    version: Optional[int] = None
+
+
+class RejectPlanRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    proposal_id: Optional[str] = None
 
 
 class TaskCreateRequest(BaseModel):
@@ -175,6 +203,18 @@ class TaskCompleteRequest(BaseModel):
     user_id: Optional[int] = Field(default=None, ge=1)
     completed_at: Optional[datetime] = None
     actual_duration: Optional[float] = Field(default=None, gt=0)
+    focus_rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
+    energy_rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
+    productivity_rating: Optional[float] = Field(default=None, ge=1.0, le=5.0)
+    feedback_notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class TaskFeedbackRequest(BaseModel):
+    user_id: Optional[int] = Field(default=None, ge=1)
+    focus_rating: float = Field(..., ge=1.0, le=5.0)
+    energy_rating: float = Field(..., ge=1.0, le=5.0)
+    productivity_rating: float = Field(..., ge=1.0, le=5.0)
+    feedback_notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 class TrainResponse(BaseModel):
@@ -195,6 +235,28 @@ class ReportResponse(BaseModel):
 
 class MultiEngineResponse(BaseModel):
     result: Dict[str, Any]
+
+
+def _normalize_numpy_response_values(value: Any) -> Any:
+    """Convert NumPy values in untyped response payloads to JSON-native values.
+
+    Orchestrator responses intentionally use ``Dict[str, Any]`` so FastAPI's
+    response model cannot validate nested NumPy scalars or arrays. Convert
+    those known types recursively at the HTTP boundary; leave all unrelated
+    objects untouched for the normal response validation/serialization path.
+    """
+    if isinstance(value, np.generic):
+        return _normalize_numpy_response_values(value.item())
+    if isinstance(value, np.ndarray):
+        return _normalize_numpy_response_values(value.tolist())
+    if isinstance(value, Mapping):
+        return {
+            _normalize_numpy_response_values(key): _normalize_numpy_response_values(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_numpy_response_values(item) for item in value]
+    return value
 
 
 class DecisionPipelineResponse(BaseModel):
@@ -225,6 +287,48 @@ class RecommendationResponse(BaseModel):
 class CommandResponse(BaseModel):
     intent: str
     result: Dict[str, Any]
+    conversation_id: Optional[str] = None
+
+
+class ConversationSummaryResponse(BaseModel):
+    id: str
+    user_id: int
+    title: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    message_count: int = 0
+
+
+class ConversationListResponse(BaseModel):
+    conversations: List[ConversationSummaryResponse]
+
+
+class ChatMessageResponse(BaseModel):
+    id: str
+    conversation_id: str
+    user_id: int
+    role: str
+    content: str
+    intent: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+
+
+class ConversationDetailResponse(BaseModel):
+    conversation: ConversationSummaryResponse
+    messages: List[ChatMessageResponse]
+
+
+class CreateConversationRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=255)
+
+
+class ProviderTestResponse(BaseModel):
+    success: bool
+    message: str
+    status: str
+    last_error: Optional[str] = None
+    error_category: Optional[str] = None
 
 
 class TaskListResponse(BaseModel):
@@ -246,6 +350,7 @@ class SystemHealthResponse(BaseModel):
     status: str
     database_connected: bool
     timestamp: str
+    database_pool: Optional[Dict[str, Any]] = None
 
 
 class SystemStatusResponse(BaseModel):
@@ -264,12 +369,31 @@ class ModelStatusResponse(BaseModel):
     status: str
     in_memory_only: bool
     models_registered: int
+    production_model_approved: bool = False
+    candidate_model_staging: bool = False
+    heuristic_fallback_active: bool = True
+    rl_policy_status: str = "UNINITIALIZED_ZERO_POLICY"
+    demo_artifacts_locked: bool = True
+    total_components_available: Optional[int] = None
+    component_inventory: Optional[Dict[str, Any]] = None
+
+
+class TrainingTriggerRequest(BaseModel):
+    job_type: str = "public_benchmark"
+    force: bool = False
+
+
+class TrainingRetryRequest(BaseModel):
+    job_id: Optional[str] = None
 
 
 @app.on_event("startup")
 def startup() -> None:
-    """Create database tables before the API starts serving requests."""
+    """Create database tables and initialize component registry before serving."""
     create_tables()
+    from backend.app.ml.system_inventory import SystemComponentRegistry
+
+    SystemComponentRegistry.get_instance().initialize_all()
 
 
 def _auth_user_payload(user: User) -> AuthenticatedUserResponse:
@@ -331,6 +455,10 @@ def _build_task_lifecycle_service(session: Session) -> TaskLifecycleService:
 
 
 def _build_brain(session: Session) -> QuantumLifeBrain:
+    # QuantumLifeBrain constructs VectorMemorySystem. Start its expensive local
+    # embedding import before construction so every brain-backed API, not only
+    # the JAM command route, can use the deterministic fallback during warm-up.
+    VectorMemorySystem.preload_model_async()
     return QuantumLifeBrain(session=session)
 
 
@@ -402,7 +530,14 @@ def start_task(
             started_at=request.started_at,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        msg = str(exc)
+        if msg == "task not found.":
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        if msg == "task has already been started.":
+            raise HTTPException(status_code=409, detail="task has already been started.") from exc
+        if msg == "completed task cannot be started.":
+            raise HTTPException(status_code=409, detail="completed task cannot be started.") from exc
+        raise HTTPException(status_code=400, detail=msg) from exc
     return MultiEngineResponse(result={"task": service.serialize_task(task)})
 
 
@@ -419,10 +554,54 @@ def complete_task(
             user_id=request.user_id,
             completed_at=request.completed_at,
             actual_duration=request.actual_duration,
+            focus_rating=request.focus_rating,
+            energy_rating=request.energy_rating,
+            productivity_rating=request.productivity_rating,
+            feedback_notes=request.feedback_notes,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        msg = str(exc)
+        if msg == "task not found.":
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        if msg == "task has already been completed.":
+            raise HTTPException(status_code=409, detail="Task has already been completed") from exc
+        raise HTTPException(status_code=400, detail=msg) from exc
     return MultiEngineResponse(result={"task": service.serialize_task(task)})
+
+
+@app.post("/api/v1/tasks/{task_id}/feedback", response_model=MultiEngineResponse)
+def submit_task_feedback(
+    task_id: int,
+    request: TaskFeedbackRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_task_lifecycle_service(db)
+    try:
+        task = service.record_feedback(
+            task_id=task_id,
+            user_id=request.user_id,
+            focus_rating=request.focus_rating,
+            energy_rating=request.energy_rating,
+            productivity_rating=request.productivity_rating,
+            feedback_notes=request.feedback_notes,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "task not found.":
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        raise HTTPException(status_code=400, detail=msg) from exc
+    return MultiEngineResponse(result={"task": service.serialize_task(task)})
+
+
+@app.get("/api/v1/ml/readiness", response_model=MultiEngineResponse)
+def get_ml_system_readiness(
+    user_id: Optional[int] = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.ml.readiness import assess_full_ml_system_readiness
+
+    report = assess_full_ml_system_readiness(db, user_id=user_id)
+    return MultiEngineResponse(result=report.to_dict())
 
 
 @app.get("/api/v1/tasks/ml-dataset/readiness", response_model=MultiEngineResponse)
@@ -648,18 +827,254 @@ async def get_recommendations(
 )
 async def process_ai_command(
     request: CommandRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CommandResponse:
+    if current_user.id != request.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: User isolation violation.")
+
+    from backend.app.services.chat_service import ChatService
+    chat_service = ChatService(db)
+    conv = chat_service.get_or_create_active_conversation(
+        user_id=current_user.id,
+        conversation_id=request.conversation_id,
+        title_hint=request.command,
+    )
+    chat_service.add_user_message(
+        user_id=current_user.id,
+        conversation_id=conv.id,
+        content=request.command,
+    )
+    turns = chat_service.get_conversation_turns(current_user.id, conv.id, max_turns=6)
+
+    # Local transformer import/model loading is expensive on cold processes.
+    # Start it once outside this request; VectorMemorySystem uses its deterministic
+    # fallback while the local-only model is initializing.
+    VectorMemorySystem.preload_model_async()
     interaction_layer = _build_interaction_layer(db, days_back=request.days_back)
     try:
         result = await interaction_layer.process_command(
-            user_id=request.user_id,
+            user_id=current_user.id,
             command=request.command,
+            conversation_turns=turns,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return CommandResponse(**result)
+    raw_res = result.get("result", {})
+    summary = (
+        raw_res.get("executive_summary")
+        or raw_res.get("answer")
+        or f"Processed {result.get('intent', 'command')}."
+    )
+    chat_service.add_assistant_message(
+        user_id=current_user.id,
+        conversation_id=conv.id,
+        content=str(summary),
+        intent=result.get("intent"),
+        metadata=raw_res,
+    )
+
+    return CommandResponse(
+        intent=result["intent"],
+        result=result["result"],
+        conversation_id=conv.id,
+    )
+
+
+@app.post(
+    "/api/v1/ai/accept-plan",
+    response_model=MultiEngineResponse,
+)
+@app.post(
+    "/api/v1/ai/plan/accept",
+    response_model=MultiEngineResponse,
+)
+async def accept_plan(
+    request: AcceptPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    if current_user.id != request.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: User isolation violation.")
+    interaction_layer = _build_interaction_layer(db)
+    await interaction_layer.initialize_engine()
+    from backend.app.orchestrator.brain_models import BrainRequest
+    import uuid
+    brain_request = BrainRequest(
+        request_id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        intent="accept_plan",
+        command="Accept plan proposal",
+        parameters={
+            "intent": "accept_plan",
+            "schedule": request.schedule,
+            "proposal_id": request.proposal_id,
+            "version": request.version,
+        },
+    )
+    response = await interaction_layer.execute_intent(brain_request)
+    if not response.success:
+        raise HTTPException(status_code=400, detail=response.executive_summary)
+    return MultiEngineResponse(result=response.raw_result)
+
+
+@app.post(
+    "/api/v1/ai/reject-plan",
+    response_model=MultiEngineResponse,
+)
+@app.post(
+    "/api/v1/ai/plan/reject",
+    response_model=MultiEngineResponse,
+)
+async def reject_plan(
+    request: RejectPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    if current_user.id != request.user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: User isolation violation.")
+    interaction_layer = _build_interaction_layer(db)
+    await interaction_layer.initialize_engine()
+    from backend.app.orchestrator.brain_models import BrainRequest
+    import uuid
+    brain_request = BrainRequest(
+        request_id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        intent="reject_plan",
+        command="Reject plan proposal",
+        parameters={
+            "intent": "reject_plan",
+            "proposal_id": request.proposal_id,
+        },
+    )
+    response = await interaction_layer.execute_intent(brain_request)
+    return MultiEngineResponse(result=response.raw_result)
+
+
+@app.get(
+    "/api/v1/ai/plan/active",
+    response_model=MultiEngineResponse,
+)
+def get_active_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.services.plan_proposal_service import PlanProposalService
+    service = PlanProposalService(db)
+    active = service.get_active_proposal(current_user.id)
+    return MultiEngineResponse(result={"active_proposal": active.to_dict() if active else None})
+
+
+class ProviderStatusResponse(BaseModel):
+    provider: str
+    model: str
+    is_configured: bool
+    has_api_key: bool
+    masked_key: str
+    endpoint: str
+    status: str
+    status_label: str
+    fallback_active: bool
+    timeout_seconds: float
+    supported_models: List[str]
+    last_error: Optional[str] = None
+    error_category: Optional[str] = None
+
+
+@app.get(
+    "/api/v1/ai/provider-status",
+    response_model=ProviderStatusResponse,
+)
+def get_ai_provider_status() -> ProviderStatusResponse:
+    from backend.app.interface.llm_provider import OpenAIProvider
+    provider = OpenAIProvider()
+    return ProviderStatusResponse(**provider.get_status())
+
+
+@app.post(
+    "/api/v1/ai/provider-test",
+    response_model=ProviderTestResponse,
+)
+def test_ai_provider_connection() -> ProviderTestResponse:
+    from backend.app.interface.llm_provider import OpenAIProvider
+    provider = OpenAIProvider()
+    success, message = provider.test_connection()
+    status_dict = provider.get_status()
+    return ProviderTestResponse(
+        success=success,
+        message=message,
+        status=status_dict["status"],
+        last_error=status_dict.get("last_error"),
+        error_category=status_dict.get("error_category"),
+    )
+
+
+@app.get(
+    "/api/v1/jam/conversations",
+    response_model=ConversationListResponse,
+)
+def list_jam_conversations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ConversationListResponse:
+    from backend.app.services.chat_service import ChatService
+    service = ChatService(db)
+    items = service.list_conversations(current_user.id)
+    return ConversationListResponse(conversations=[ConversationSummaryResponse(**item) for item in items])
+
+
+@app.post(
+    "/api/v1/jam/conversations",
+    response_model=ConversationSummaryResponse,
+    status_code=201,
+)
+def create_jam_conversation(
+    request: CreateConversationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ConversationSummaryResponse:
+    from backend.app.services.chat_service import ChatService
+    service = ChatService(db)
+    conv = service.create_conversation(current_user.id, title=request.title)
+    return ConversationSummaryResponse(**conv.to_dict())
+
+
+@app.get(
+    "/api/v1/jam/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+)
+def get_jam_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ConversationDetailResponse:
+    from backend.app.services.chat_service import ChatService
+    service = ChatService(db)
+    conv = service.get_conversation(current_user.id, conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found or unauthorized.")
+    messages = service.get_messages(current_user.id, conversation_id)
+    return ConversationDetailResponse(
+        conversation=ConversationSummaryResponse(**conv.to_dict()),
+        messages=[ChatMessageResponse(**m) for m in messages],
+    )
+
+
+@app.delete(
+    "/api/v1/jam/conversations/{conversation_id}",
+)
+def delete_jam_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    from backend.app.services.chat_service import ChatService
+    service = ChatService(db)
+    deleted = service.delete_conversation(current_user.id, conversation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Conversation not found or unauthorized.")
+    return {"success": True, "deleted_conversation_id": conversation_id}
 
 
 @app.post("/api/v1/schedule/optimize", response_model=MultiEngineResponse)
@@ -823,7 +1238,7 @@ def ai_search_memory(
 ) -> MultiEngineResponse:
     brain = _build_brain(db)
     result = brain.search_memory(query=request.query, limit=request.limit, user_id=user.id)
-    return MultiEngineResponse(result=result)
+    return MultiEngineResponse(result=_normalize_numpy_response_values(result))
 
 
 @app.get("/api/v1/ai/context", response_model=MultiEngineResponse)
@@ -887,13 +1302,14 @@ def generate_executive_plan(
             user_id=request.user_id,
             query=request.query,
         )
-        return MultiEngineResponse(result=result)
+        return MultiEngineResponse(result=_normalize_numpy_response_values(result))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/system/health", response_model=SystemHealthResponse)
 def get_system_health(db: Session = Depends(get_db)) -> SystemHealthResponse:
+    from backend.app.database.db import get_pool_status
     try:
         db.execute(text("SELECT 1"))
         db_connected = True
@@ -903,7 +1319,8 @@ def get_system_health(db: Session = Depends(get_db)) -> SystemHealthResponse:
     return SystemHealthResponse(
         status="operational" if db_connected else "degraded",
         database_connected=db_connected,
-        timestamp=datetime.utcnow().isoformat()
+        timestamp=datetime.utcnow().isoformat(),
+        database_pool=get_pool_status(),
     )
 
 
@@ -951,10 +1368,187 @@ def get_quantum_status() -> QuantumStatusResponse:
 
 @app.get("/api/v1/ml/model-status", response_model=ModelStatusResponse)
 def get_model_status() -> ModelStatusResponse:
-    from backend.app.ml.model_registry import ModelRegistry
-    registry = ModelRegistry()
-    return ModelStatusResponse(
-        status="uninitialized",
-        in_memory_only=True,
-        models_registered=len(registry.store.list("behavior_model")) if hasattr(registry, "store") else 0
+    from backend.app.ml.model_registry import ModelStatus, get_model_registry
+    from backend.app.ai_rl.rl_scheduler import RLScheduler
+    from backend.app.ml.system_inventory import SystemComponentRegistry
+
+    registry = get_model_registry()
+    rl_scheduler = RLScheduler()
+    component_reg = SystemComponentRegistry.get_instance()
+    summary = component_reg.get_inventory_summary()
+
+    prod_model = (
+        registry.get_latest_model("DurationRatioModel")
+        or registry.get_latest_model("behavior_model")
+        or registry.get_latest_model("ProductivityModel")
     )
+    staging_models = [
+        m
+        for m_name in ("DurationRatioModel", "behavior_model", "ProductivityModel")
+        for m in registry.list_models(m_name)
+        if m.status == ModelStatus.STAGING
+    ]
+
+    rl_status = "UNINITIALIZED_ZERO_POLICY" if len(rl_scheduler.q_table) == 0 else "TRAINED"
+    total_registered = sum(
+        len(registry.list_models(m_name))
+        for m_name in ("DurationRatioModel", "behavior_model", "ProductivityModel")
+    )
+
+    return ModelStatusResponse(
+        status="production" if prod_model else "uninitialized",
+        in_memory_only=True,
+        models_registered=total_registered,
+        production_model_approved=prod_model is not None,
+        candidate_model_staging=len(staging_models) > 0,
+        heuristic_fallback_active=prod_model is None,
+        rl_policy_status=rl_status,
+        demo_artifacts_locked=True,
+        total_components_available=summary.get("available_for_execution", 0),
+        component_inventory=summary.get("components"),
+    )
+
+
+@app.get("/api/v1/system/component-inventory", response_model=MultiEngineResponse)
+def get_system_component_inventory() -> MultiEngineResponse:
+    from backend.app.ml.system_inventory import SystemComponentRegistry
+
+    registry = SystemComponentRegistry.get_instance()
+    return MultiEngineResponse(result=registry.get_inventory_summary())
+
+
+@app.get("/api/v1/ml/training/status", response_model=MultiEngineResponse)
+def get_ml_training_status() -> MultiEngineResponse:
+    from backend.app.ml.training_controller import get_training_controller
+
+    controller = get_training_controller()
+    return MultiEngineResponse(result=controller.get_status())
+
+
+@app.post("/api/v1/ml/training/trigger", response_model=MultiEngineResponse, status_code=202)
+def trigger_ml_training(
+    request: TrainingTriggerRequest = TrainingTriggerRequest(),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.ml.training_controller import get_training_controller
+    from backend.app.database.db import SessionLocal
+
+    controller = get_training_controller()
+    try:
+        job = controller.trigger_training(
+            job_type=request.job_type,
+            force=request.force,
+            triggered_by=f"user_{current_user.id}" if current_user else "api",
+            user_id=current_user.id if current_user else None,
+            db_session_factory=SessionLocal,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MultiEngineResponse(result=job.to_dict())
+
+
+@app.post("/api/v1/ml/training/retry", response_model=MultiEngineResponse, status_code=202)
+def retry_ml_training(
+    request: TrainingRetryRequest = TrainingRetryRequest(),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.ml.training_controller import get_training_controller
+    from backend.app.database.db import SessionLocal
+
+    controller = get_training_controller()
+    try:
+        job = controller.retry_training(
+            job_id=request.job_id,
+            user_id=current_user.id if current_user else None,
+            db_session_factory=SessionLocal,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return MultiEngineResponse(result=job.to_dict())
+
+
+@app.post("/api/v1/ml/datasets/bootstrap-public", response_model=MultiEngineResponse)
+def bootstrap_public_dataset(
+    force: bool = Query(default=False),
+) -> MultiEngineResponse:
+    from backend.app.ml.datasets.public_dataset_manager import PublicDatasetManager
+
+    mgr = PublicDatasetManager()
+    try:
+        meta = mgr.bootstrap_uci_garment(force=force)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to bootstrap public dataset: {exc}") from exc
+    return MultiEngineResponse(result=meta.to_dict())
+
+
+@app.get("/api/v1/benchmarks/datasets", response_model=MultiEngineResponse)
+def get_benchmark_datasets() -> MultiEngineResponse:
+    from backend.app.ml.datasets.public_dataset_manager import PublicDatasetManager
+
+    mgr = PublicDatasetManager()
+    return MultiEngineResponse(
+        result={
+            "catalog": mgr.get_dataset_catalog(),
+            "compatibility_matrix": mgr.get_compatibility_matrix(),
+            "scheduling_scenarios": mgr.get_scheduling_benchmark_scenarios(),
+        }
+    )
+
+
+@app.get("/api/v1/benchmarks/quantum", response_model=MultiEngineResponse)
+def get_quantum_benchmarks() -> MultiEngineResponse:
+    import json
+    from pathlib import Path
+    from backend.app.quantum.benchmarking.quantum_benchmark_runner import QuantumBenchmarkRunner
+
+    results_path = Path("scratch/quantum_optimization_benchmark_results.json")
+    if results_path.exists():
+        try:
+            with open(results_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return MultiEngineResponse(result=data)
+        except Exception:
+            pass
+
+    runner = QuantumBenchmarkRunner()
+    summary = runner.run_all_benchmarks()
+    return MultiEngineResponse(result=summary.to_dict())
+
+
+@app.get("/api/v1/benchmarks/rl", response_model=MultiEngineResponse)
+def get_rl_benchmarks() -> MultiEngineResponse:
+    import json
+    from pathlib import Path
+
+    results_path = Path("scratch/rl_benchmark_results.json")
+    if results_path.exists():
+        try:
+            with open(results_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return MultiEngineResponse(result=data)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return MultiEngineResponse(result={"status": "not_executed", "notes": "Run RL benchmark suite to populate."})
+
+
+@app.get("/api/v1/benchmarks/vector-memory", response_model=MultiEngineResponse)
+def get_vector_memory_benchmarks() -> MultiEngineResponse:
+    import json
+    from pathlib import Path
+
+    results_path = Path("scratch/vector_memory_benchmark_results.json")
+    if results_path.exists():
+        try:
+            with open(results_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return MultiEngineResponse(result=data)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return MultiEngineResponse(result={"status": "not_executed", "notes": "Run vector memory benchmark to populate."})
+

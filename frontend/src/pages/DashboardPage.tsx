@@ -1,443 +1,471 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  useSystemHealth,
-  useSystemStatus,
-  useQuantumStatus,
-  useMLModelStatus,
-  useTasks,
-} from "@/api/hooks";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { StatusIndicator } from "@/components/ui/StatusIndicator";
+import { Link } from "react-router-dom";
+import { Activity, ArrowRight, Atom, BrainCircuit, CalendarDays, CheckCircle2, Clock3, Database, ListChecks, Server, Sparkles } from "lucide-react";
+import { useComponentInventory, useDataCollectionStatus, useLatestExecutiveResult, useMLModelStatus, useMLReadiness, useQuantumStatus, useSystemHealth, useSystemStatus, useTasks } from "@/api/hooks";
 import { Badge } from "@/components/ui/Badge";
-import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
-import {
-  MessageSquare,
-  CheckSquare,
-  Calendar,
-  Zap,
-  BrainCircuit,
-  Database,
-  Atom,
-  Server,
-  Activity,
-  Cpu,
-  Layers,
-  AlertTriangle
-} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Spinner } from "@/components/ui/Spinner";
+import { NeuralCore, type CoreActivityStatus } from "@/components/neural-core/NeuralCore";
+import { mapBackendState, type NeuralCoreNode } from "@/components/neural-core/coreState";
+import type { Task, ComponentInventoryItem } from "@/api/endpoints";
+import { TechnicalDetails } from "@/components/common/TechnicalDetails";
+import { formatDuration, formatLocalDateTime, formatStatus } from "@/utils/formatters";
 
-// --- Section A: System Overview ---
-function SystemOverview() {
-  const { data, isLoading, isError } = useSystemHealth();
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
 
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">System Health</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-10 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
+function valueText(value: unknown, fallback = "Not available") {
+  return typeof value === "string" || typeof value === "number" ? String(value) : fallback;
+}
 
-  if (isError || !data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">System Health</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center gap-2 text-status-error">
-          <AlertTriangle className="h-5 w-5" />
-          <span className="text-sm font-medium">Unable to retrieve current health</span>
-        </CardContent>
-      </Card>
-    );
-  }
-
+function MetricCard({ title, value, detail, icon: Icon, tone = "primary" }: { title: string; value: string; detail: string; icon: typeof Activity; tone?: "primary" | "warning" | "success" | "quantum" }) {
+  const toneClass = { primary: "text-primary", warning: "text-status-warning", success: "text-status-success", quantum: "text-quantum" }[tone];
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-sm flex items-center justify-between">
-          <span>System Health</span>
-          <StatusIndicator status={data.status === "operational" ? "online" : "warning"} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-content-secondary flex items-center gap-2">
-              <Server className="h-4 w-4" /> Status
-            </span>
-            <span className="font-medium capitalize text-content-primary">
-              {data.status}
-            </span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-content-secondary flex items-center gap-2">
-              <Database className="h-4 w-4" /> Database
-            </span>
-            <span className="font-medium text-content-primary">
-              {data.database_connected ? "Connected" : "Disconnected"}
-            </span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-content-secondary">Last Check</span>
-            <span className="font-mono text-xs text-content-tertiary">
-              {new Date(data.timestamp).toLocaleTimeString()}
-            </span>
-          </div>
+      <CardContent className="flex items-start justify-between gap-3 p-4 sm:p-5">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">{title}</p>
+          <p className="mt-2 truncate text-xl font-semibold text-content-primary">{value}</p>
+          <p className="mt-1 text-xs text-content-secondary">{detail}</p>
         </div>
+        <span className={`rounded-lg bg-surface-2 p-2 ${toneClass}`}><Icon className="h-5 w-5" /></span>
       </CardContent>
     </Card>
   );
 }
 
-// --- Section B: Intelligence Overview ---
-function IntelligenceOverview() {
-  const { data, isLoading, isError } = useSystemStatus();
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Intelligence Metrics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-10 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Intelligence Metrics</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-status-error flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" />
-          Unable to retrieve metrics
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const metrics = data.ai_metrics || {};
-  const metricKeys = Object.keys(metrics);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm flex items-center justify-between">
-          <span>Intelligence Metrics</span>
-          <Activity className="h-4 w-4 text-primary" />
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {metricKeys.length === 0 ? (
-          <p className="text-sm text-content-tertiary">No AI metrics are currently available.</p>
-        ) : (
-          <div className="space-y-3">
-            {metricKeys.map((key) => (
-              <div key={key} className="flex justify-between items-center text-sm border-b border-border pb-2 last:border-0 last:pb-0">
-                <span className="text-content-secondary capitalize">
-                  {key.replace(/_/g, " ")}
-                </span>
-                <span className="font-mono font-medium text-content-primary">
-                  {String(metrics[key])}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+function activityTime(task: Task): string | null {
+  const timestamp = task.end_time ?? task.start_time ?? task.created_at;
+  if (!timestamp) return null;
+  return formatLocalDateTime(timestamp);
 }
-
-// --- Section C: Quantum Capability ---
-function QuantumCapability() {
-  const { data, isLoading, isError } = useQuantumStatus();
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Quantum Capability</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-10 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Quantum Capability</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-status-error flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" />
-          Unable to retrieve quantum status
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="border-quantum/20">
-      <CardHeader>
-        <CardTitle className="text-sm flex items-center justify-between text-quantum">
-          <span className="flex items-center gap-2"><Atom className="h-4 w-4" /> Quantum Status</span>
-          <Badge variant={data.available ? "quantum" : "default"}>
-            {data.available ? "Configuration available" : "Configuration unavailable"}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {!data.direct_execution_exposed && (
-            <div className="rounded-md bg-surface-2 p-3 border border-border">
-              <p className="text-xs font-medium text-content-primary">Local software simulation</p>
-              <p className="text-xs text-content-secondary mt-1">No physical quantum hardware execution is used or exposed by this application.</p>
-            </div>
-          )}
-          
-          {data.config && Object.keys(data.config).length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wider">Configuration</h4>
-              {Object.entries(data.config).map(([k, v]) => (
-                <div key={k} className="flex justify-between items-center text-xs">
-                  <span className="text-content-secondary capitalize">{k.replace(/_/g, " ")}</span>
-                  <span className="font-mono text-content-primary">{String(v)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {data.qaoa_config && Object.keys(data.qaoa_config).length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wider">QAOA</h4>
-              {Object.entries(data.qaoa_config).map(([k, v]) => (
-                <div key={k} className="flex justify-between items-center text-xs">
-                  <span className="text-content-secondary capitalize">{k.replace(/_/g, " ")}</span>
-                  <span className="font-mono text-content-primary">{String(v)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// --- Section D: ML Capability ---
-function MLCapability() {
-  const { data, isLoading, isError } = useMLModelStatus();
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">ML Models</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-10 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">ML Models</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-status-error flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" />
-          Unable to retrieve ML status
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm flex items-center justify-between">
-          <span className="flex items-center gap-2"><Cpu className="h-4 w-4 text-primary" /> ML Status</span>
-          <StatusIndicator status={data.status === "operational" ? "online" : "unknown"} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-content-secondary">Status</span>
-            <span className="font-medium text-content-primary capitalize">{data.status}</span>
-          </div>
-          
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-content-secondary">Registry</span>
-            {data.models_registered === 0 ? (
-              <span className="text-content-tertiary italic">No registered models</span>
-            ) : (
-              <Badge variant="default">{data.models_registered} Models</Badge>
-            )}
-          </div>
-          
-          {data.in_memory_only && (
-            <div className="flex items-center gap-2 text-xs text-content-tertiary bg-surface-2 p-2 rounded border border-border">
-              <Layers className="h-3 w-3" />
-              <span>In-memory registry active</span>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// --- Section E: Task Snapshot ---
-function TaskSnapshot() {
-  const { data, isLoading, isError } = useTasks();
-
-  if (isLoading) {
-    return (
-      <Card className="md:col-span-2">
-        <CardHeader>
-          <CardTitle className="text-sm">Active Tasks</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <Card className="md:col-span-2">
-        <CardHeader>
-          <CardTitle className="text-sm">Active Tasks</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-status-error flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" />
-          Unable to retrieve tasks for current user.
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const tasks = data.tasks || [];
-
-  return (
-    <Card className="md:col-span-2">
-      <CardHeader>
-        <CardTitle className="text-sm flex items-center justify-between">
-          <span className="flex items-center gap-2"><CheckSquare className="h-4 w-4 text-primary" /> Active Tasks</span>
-          <Badge variant="secondary">{tasks.length}</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-6 text-content-tertiary">
-            <CheckSquare className="h-8 w-8 mb-2 opacity-20" />
-            <p className="text-sm">No active tasks.</p>
-          </div>
-        ) : (
-          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-            {tasks.slice(0, 5).map((task: any, idx: number) => (
-              <div key={task.id || idx} className="flex items-center justify-between p-3 rounded-md bg-surface-2 border border-border hover:-translate-y-[1px] transition-transform">
-                <div>
-                  <h4 className="text-sm font-medium text-content-primary">{task.title || `Task #${task.id || idx}`}</h4>
-                  <p className="text-xs text-content-secondary mt-1">{task.task_type || "Generic"}</p>
-                </div>
-                <Badge variant={task.status === "completed" ? "success" : "default"}>
-                  {task.status || "Unknown"}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// --- Section F: Quick Actions ---
-const quickActions = [
-  { label: "JAM Assistant", path: "/assistant", icon: MessageSquare },
-  { label: "Tasks", path: "/tasks", icon: CheckSquare },
-  { label: "Planning", path: "/planning", icon: Calendar },
-  { label: "Optimization", path: "/optimization", icon: Zap },
-  { label: "Intelligence", path: "/intelligence", icon: BrainCircuit },
-  { label: "Data & Learning", path: "/data-learning", icon: Database },
-  { label: "Quantum Workspace", path: "/quantum", icon: Atom },
-];
-
-
-
-function QuickActions() {
-  const navigate = useNavigate();
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {quickActions.map((action) => {
-        const Icon = action.icon;
-        return (
-          <Button
-            key={action.path}
-            variant="secondary"
-            className="h-auto py-4 flex flex-col items-center justify-center gap-2 group"
-            onClick={() => navigate(action.path)}
-          >
-            <Icon className="h-5 w-5 text-content-secondary group-hover:text-primary transition-colors" />
-            <span className="text-xs font-medium">{action.label}</span>
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
 
 export function DashboardPage() {
+  const health = useSystemHealth();
+  const system = useSystemStatus();
+  const quantum = useQuantumStatus();
+  const model = useMLModelStatus();
+  const tasksQuery = useTasks();
+  const dataQuery = useDataCollectionStatus();
+  const mlReadiness = useMLReadiness();
+  const latest = useLatestExecutiveResult();
+  const inventory = useComponentInventory();
+  const tasks = tasksQuery.data?.tasks ?? [];
+  const taskDataAvailable = !tasksQuery.isLoading && !tasksQuery.isError && tasksQuery.data !== undefined;
+  const active = tasks.filter((task) => task.lifecycle_state === "created" || task.lifecycle_state === "started");
+  const completed = tasks.filter((task) => task.lifecycle_state === "completed" || task.completed);
+  const report = record(dataQuery.data?.result.collection_report);
+  const quality = record(dataQuery.data?.result.quality_audit);
+  const optimizationEvidence = record(latest.data?.result.optimization_evidence);
+  const suitability = record(optimizationEvidence?.quantum_suitability);
+  const latestRecommendation = latest.data?.result.recommended_plan;
+  const recentTasks = [...tasks].sort((a, b) => (Date.parse(b.end_time ?? b.start_time ?? b.created_at ?? "") || 0) - (Date.parse(a.end_time ?? a.start_time ?? a.created_at ?? "") || 0)).slice(0, 5);
+  const apiHealthy = health.data?.status === "operational" && health.data.database_connected;
+  const rawReadiness = valueText(quality?.readiness_status, "Not available");
+  const predictionState = model.isError ? "ERROR" : model.isLoading ? "UNKNOWN" : mapBackendState("NOT_PROVEN");
+  const planningState = latest.isError
+    ? "ERROR"
+    : !latest.data
+      ? "UNKNOWN"
+      : mapBackendState(optimizationEvidence?.prediction_matrix_status, false);
+
+  const durationComp = mlReadiness.data?.components.DurationRatioModel;
+  const prodComp = mlReadiness.data?.components.ProductivityModel;
+  const rlComp = mlReadiness.data?.components.RLScheduler;
+
+  const rawComponents = inventory.data?.components;
+  const componentsList: ComponentInventoryItem[] = Array.isArray(rawComponents)
+    ? rawComponents
+    : rawComponents && typeof rawComponents === "object"
+      ? Object.values(rawComponents as Record<string, ComponentInventoryItem>)
+      : [];
+
+  const vectorMem = componentsList.find((c) => (c.canonical_id ?? c.component_id) === "vector_memory_embedding");
+  const classicalOpt = componentsList.find((c) => (c.canonical_id ?? c.component_id) === "classical_optimizer");
+  const durationModel = componentsList.find((c) => (c.canonical_id ?? c.component_id) === "duration_ratio_model");
+
+  const coreNodes: NeuralCoreNode[] = [
+    {
+      id: "memory",
+      label: "Memory",
+      state: vectorMem?.can_execute_now ? "READY" : "UNKNOWN",
+      detail: vectorMem
+        ? `${vectorMem.display_name ?? vectorMem.name ?? "Vector Memory"}: ${vectorMem.operational_state} (Local hash projection fallback)`
+        : "Live memory readiness loading...",
+      route: "/intelligence",
+    },
+    {
+      id: "behavior",
+      label: "Behavior",
+      state: dataQuery.isError ? "ERROR" : dataQuery.isLoading ? "UNKNOWN" : mapBackendState(quality?.readiness_status),
+      detail: quality ? valueText(quality.readiness_status, "Audit status not returned") : "User-scoped behavior audit status not available.",
+      route: "/intelligence",
+    },
+    {
+      id: "prediction",
+      label: "Prediction",
+      state: durationModel?.can_execute_now ? "READY" : predictionState,
+      detail: durationModel?.can_execute_now
+        ? "Duration baseline heuristic active; personalized ML training awaits data minimums."
+        : "Model readiness is not available.",
+      route: "/intelligence",
+    },
+    {
+      id: "planning",
+      label: "Planning",
+      state: planningState,
+      detail: latest.data ? `Latest matrix: ${valueText(optimizationEvidence?.prediction_matrix_status, "status not returned")}` : "No planning result is cached for this session.",
+      route: "/planning",
+    },
+    {
+      id: "optimization",
+      label: "Optimization",
+      state: classicalOpt?.can_execute_now ? "READY" : "NOT_READY",
+      detail: classicalOpt?.can_execute_now
+        ? "Classical & multi-objective optimizers operational (independent of ML models)."
+        : "Optimization engines unavailable.",
+      route: "/optimization",
+    },
+    {
+      id: "quantum",
+      label: "Quantum suitability",
+      state: latest.isError ? "ERROR" : mapBackendState(suitability?.status),
+      detail: typeof suitability?.status === "string" ? suitability.status : quantum.data?.available ? "Software simulator ready; problem suitability evaluated per run." : "Problem-specific suitability is not available.",
+      route: "/quantum",
+    },
+    {
+      id: "executive",
+      label: "Executive Brain",
+      state: latest.isError ? "ERROR" : latest.data?.result.executive_summary ? "READY" : "UNKNOWN",
+      detail: latest.data?.result.executive_summary ? "Executive response is available in this session." : "No executive decision is cached for this session.",
+      route: "/planning",
+    },
+  ];
+
+  const inProgressTask = tasks.find((t) => t.lifecycle_state === "started");
+  const isPlanningGenerating = latest.isLoading;
+
+  const coreActivity: CoreActivityStatus = isPlanningGenerating
+    ? {
+        state: "processing",
+        label: "Synthesizing Schedule",
+        detail: "Evaluating multi-objective scheduling constraints",
+      }
+    : inProgressTask
+    ? {
+        state: "active_task",
+        label: `Active: ${inProgressTask.title}`,
+        detail: `${inProgressTask.task_type} · Priority ${inProgressTask.priority} · In progress`,
+      }
+    : tasks.length > 0 && active.length === 0 && completed.length > 0
+    ? {
+        state: "completed",
+        label: "Workspace Idle · Completed",
+        detail: "All active tasks finished for today",
+      }
+    : {
+        state: "idle",
+        label: "Workspace Idle · Ready",
+        detail: "Awaiting task execution or assistant prompts",
+      };
+
   return (
-    <div className="space-y-8 pb-10">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-bold tracking-tight text-content-primary">HELIOX AI</h2>
-        <p className="text-sm text-content-secondary max-w-2xl">
-          Intelligence Overview. Mission control for intelligent personal optimization.
-        </p>
-      </div>
+    <div className="space-y-6 pb-8 sm:space-y-8">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Personal Intelligence · Workspace</p>
+          <h2 className="mt-2 text-2xl font-bold tracking-tight text-content-primary sm:text-3xl">Home</h2>
+          <p className="mt-2 max-w-2xl text-sm text-content-secondary">
+            A live overview from your authenticated task data and active HELIOX intelligence capabilities.
+          </p>
+        </div>
+        <Link to="/tasks">
+          <Button className="gap-2">Open My Tasks <ArrowRight className="h-4 w-4" /></Button>
+        </Link>
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <SystemOverview />
-        <IntelligenceOverview />
-        <QuantumCapability />
-        <MLCapability />
-      </div>
+      <NeuralCore nodes={coreNodes} activity={coreActivity} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <TaskSnapshot />
-      </div>
+      <section aria-label="Project status" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          title="Active tasks"
+          value={tasksQuery.isLoading ? "Loading" : tasksQuery.isError ? "Unavailable" : String(active.length)}
+          detail={taskDataAvailable ? `${tasks.filter((task) => task.lifecycle_state === "started").length} in progress · ${tasks.filter((task) => task.lifecycle_state === "created").length} in backlog` : tasksQuery.isLoading ? "Loading task breakdown" : "Task breakdown unavailable"}
+          icon={ListChecks}
+          tone={tasksQuery.isError ? "warning" : "primary"}
+        />
+        <MetricCard
+          title="Completed outcomes"
+          value={tasksQuery.isLoading ? "Loading" : tasksQuery.isError ? "Unavailable" : String(completed.length)}
+          detail={`${valueText(report?.valid_actual_duration_records, "No verified outcome count")} lifecycle-verified durations`}
+          icon={CheckCircle2}
+          tone="success"
+        />
+        <MetricCard
+          title="Learning data"
+          value={dataQuery.isLoading ? "Loading" : dataQuery.isError ? "Unavailable" : rawReadiness}
+          detail={`${valueText(report?.f3_dataset_rows, "—")} eligible dataset rows reported`}
+          icon={Database}
+          tone={rawReadiness === "READY" ? "success" : "warning"}
+        />
+        <MetricCard
+          title="API & database"
+          value={health.isLoading ? "Checking" : health.isError ? "Unavailable" : apiHealthy ? "Operational" : health.data?.database_connected === false ? "Database unavailable" : "Status incomplete"}
+          detail={health.data?.database_connected === true ? "Database reachable through FastAPI" : health.data?.database_connected === false ? "FastAPI reports the database is disconnected" : "Database state not returned"}
+          icon={Server}
+          tone={apiHealthy ? "success" : "warning"}
+        />
+      </section>
 
-      <div className="space-y-4">
-        <h3 className="text-sm font-semibold text-content-primary tracking-wide uppercase">Quick Actions</h3>
-        <QuickActions />
-      </div>
+      {/* HELIOX Learning Section */}
+      <Card className="border-border bg-gradient-to-r from-surface-1 via-surface-1 to-primary/5">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-md">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                  HELIOX Learning
+                </span>
+                <Badge variant="outline" className="text-[10px] border-border text-content-secondary">
+                  Real data only
+                </Badge>
+              </div>
+              <h3 className="mt-1 text-base font-semibold text-content-primary">
+                Your data is helping HELIOX learn your working patterns
+              </h3>
+              <p className="mt-1 text-xs text-content-secondary leading-relaxed">
+                Models stay in guarded baseline mode until sufficient genuine completed tasks and user ratings exist.
+              </p>
+            </div>
+
+            <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-3 max-w-xl">
+              <div className="rounded-lg border border-border/80 bg-surface-2/60 p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-content-secondary">Duration model</span>
+                  <span className="font-mono font-semibold text-primary">
+                    {durationComp ? `${durationComp.eligible_samples} / ${durationComp.required_samples}` : "—"}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, ((durationComp?.eligible_samples ?? 0) / (durationComp?.required_samples ?? 10)) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/80 bg-surface-2/60 p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-content-secondary">Productivity feedback</span>
+                  <span className="font-mono font-semibold text-primary">
+                    {prodComp ? `${prodComp.eligible_samples} / ${prodComp.required_samples}` : "—"}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, ((prodComp?.eligible_samples ?? 0) / (prodComp?.required_samples ?? 10)) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/80 bg-surface-2/60 p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-content-secondary">Scheduling experience</span>
+                  <span className="font-mono font-semibold text-primary">
+                    {rlComp ? `${rlComp.eligible_samples} / ${rlComp.required_samples}` : "—"}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, ((rlComp?.eligible_samples ?? 0) / (rlComp?.required_samples ?? 25)) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Link to="/data-learning" className="shrink-0">
+              <Button variant="secondary" size="sm" className="gap-1.5">
+                Learning center
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <div>
+              <CardTitle>Recent task activity</CardTitle>
+              <p className="mt-1 text-sm text-content-secondary">Created, started, and completed records from this account.</p>
+            </div>
+            <Link to="/tasks" className="text-xs font-medium text-primary hover:underline">All tasks</Link>
+          </CardHeader>
+          <CardContent>
+            {tasksQuery.isLoading ? (
+              <div className="flex justify-center py-8"><Spinner /></div>
+            ) : tasksQuery.isError ? (
+              <p role="alert" className="py-5 text-sm text-status-error">Task activity is unavailable.</p>
+            ) : recentTasks.length === 0 ? (
+              <p className="py-8 text-center text-sm text-content-secondary">No task activity yet. Create a task to begin.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {recentTasks.map((task) => (
+                  <li key={task.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-content-primary">{task.title}</p>
+                      <p className="mt-1 text-xs text-content-secondary">
+                        {task.task_type} · Priority {task.priority} · {activityTime(task) ?? "Time unavailable"}
+                      </p>
+                    </div>
+                    <Badge variant={task.lifecycle_state === "completed" ? "success" : task.lifecycle_state === "started" ? "default" : "secondary"}>
+                      {task.lifecycle_state ?? "Unknown"}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-primary" />
+                Planning &amp; decision
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {latest.data ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">Latest this session</Badge>
+                    <span className="text-xs text-content-secondary">
+                      {valueText(optimizationEvidence?.prediction_matrix_status, "Planning completed")}
+                    </span>
+                  </div>
+                  {typeof latestRecommendation === "object" && latestRecommendation !== null ? (
+                    <div className="rounded-md border border-border bg-surface-2 p-3 text-xs space-y-1">
+                      <p className="font-semibold text-content-primary">
+                        {String((latestRecommendation as Record<string, unknown>).title ?? (latestRecommendation as Record<string, unknown>).plan_name ?? "Recommended Execution Plan")}
+                      </p>
+                      {Boolean((latestRecommendation as Record<string, unknown>).description) && (
+                        <p className="text-content-secondary line-clamp-2">
+                          {String((latestRecommendation as Record<string, unknown>).description)}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-content-secondary">Recommendation: not returned.</p>
+                  )}
+                  {latestRecommendation && (
+                    <TechnicalDetails data={latestRecommendation} title="Technical details (Plan summary)" />
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-content-secondary">
+                  No planning result is cached for this signed-in session. Generate one in Planning.
+                </p>
+              )}
+              <Link to="/planning" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+                Planning workspace <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <Atom className="h-4 w-4 text-quantum" />
+                Quantum simulation readiness
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={typeof suitability?.status === "string" && suitability.status === "SUITABLE" ? "success" : "warning"}>
+                  {valueText(suitability?.status, "NOT_CHECKED")}
+                </Badge>
+                <span className="text-xs text-content-tertiary">
+                  Problem-specific suitability is evaluated per optimization request.
+                </span>
+              </div>
+              <p className="text-xs text-content-secondary">
+                {quantum.data?.available ? "Local software simulator ready." : quantum.isError ? "Quantum status could not be retrieved." : "Simulator configuration not available."} No physical quantum hardware is used.
+              </p>
+              <Link to="/quantum" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+                Quantum workspace <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <BrainCircuit className="h-4 w-4 text-primary" />
+              Personal Intelligence &amp; Model Adaptation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-content-primary">
+                {model.data?.production_model_approved
+                  ? "Personalized ML model active"
+                  : "Deterministic baselines active · Personalized training guarded"}
+              </p>
+              <p className="mt-1 text-xs text-content-secondary">
+                Adapts from genuine completed tasks in your workspace. Synthetic assumptions are never used.
+              </p>
+            </div>
+            <Link to="/data-learning">
+              <Button variant="secondary" size="sm">Learning Progress</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Ask JAM Assistant
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-content-primary">
+                Conversational Task Planning &amp; Prioritization
+              </p>
+              <p className="mt-1 text-xs text-content-secondary">
+                Natural-language assistance for daily task breakdown, schedule recommendations, and time management.
+              </p>
+            </div>
+            <Link to="/assistant">
+              <Button size="sm" className="gap-1.5">
+                Open Ask JAM
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </section>
+
+      <p className="flex items-center gap-2 text-xs text-content-tertiary">
+        <Clock3 className="h-3.5 w-3.5" />
+        Values reflect current API responses; session-only states are labeled clearly.
+      </p>
     </div>
   );
 }

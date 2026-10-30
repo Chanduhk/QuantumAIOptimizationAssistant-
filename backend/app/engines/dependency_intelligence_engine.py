@@ -108,11 +108,21 @@ class DependencyIntelligenceEngine:
 
     def _load_inline_dependencies(self, tasks: List[Dict[str, Any]]) -> None:
         task_ids = {task["id"] for task in tasks}
+        title_to_id = {str(task.get("title", "")).strip().lower(): task["id"] for task in tasks if task.get("title")}
         for task_id in task_ids:
             self.dependency_graph.tasks.add(task_id)
         for task in tasks:
             task_id = task["id"]
-            for depends_on_task_id in self._inline_dependency_ids(task):
+            for raw_dep in self._inline_dependency_ids(task):
+                depends_on_task_id = raw_dep
+                if depends_on_task_id not in task_ids and depends_on_task_id not in self.dependency_graph.tasks:
+                    dep_lower = raw_dep.lower()
+                    if dep_lower in title_to_id:
+                        depends_on_task_id = title_to_id[dep_lower]
+                    else:
+                        matches = [tid for title, tid in title_to_id.items() if dep_lower in title or title in dep_lower]
+                        if matches:
+                            depends_on_task_id = matches[0]
                 if depends_on_task_id not in task_ids and depends_on_task_id not in self.dependency_graph.tasks:
                     raise ValueError("depends_on_task_id must refer to a known task.")
                 dependency_id = f"inline:{task_id}:{depends_on_task_id}"

@@ -24,11 +24,11 @@ export function MainLayout() {
     root.classList.add(themeClass);
   }, [theme]);
   return (
-    <div className="flex min-h-screen w-full bg-background font-sans text-content-primary">
+    <div className="flex h-dvh w-full overflow-hidden milky-way-atmosphere font-sans text-content-primary">
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 lg:p-8">
           <div className="mx-auto w-full max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out fill-mode-both">
             <Outlet />
           </div>

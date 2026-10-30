@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -18,6 +19,20 @@ TASK_STATE_COMPLETED = "completed"
 SUPPORTED_STATES = frozenset({TASK_STATE_CREATED, TASK_STATE_STARTED, TASK_STATE_COMPLETED})
 ACTUAL_DURATION_TOLERANCE_MINUTES = 1e-6
 
+_ENSURED_BINDS: set[int] = set()
+_SCHEMA_LOCK = threading.Lock()
+
+
+def is_schema_ensured(bind: Any) -> bool:
+    """Return True if schema verification has already executed for this engine/bind."""
+    return id(bind) in _ENSURED_BINDS
+
+
+def reset_schema_ensured_cache() -> None:
+    """Clear the ensured binds cache (useful for testing)."""
+    with _SCHEMA_LOCK:
+        _ENSURED_BINDS.clear()
+
 
 class TaskLifecycleService:
     """Collect real task lifecycle data needed for future leakage-safe ML datasets."""
@@ -27,7 +42,9 @@ class TaskLifecycleService:
             raise ValueError("session is required.")
         self.session = session
         self.clock = clock or (lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-        ensure_task_lifecycle_schema(session)
+        bind = session.get_bind()
+        if id(bind) not in _ENSURED_BINDS:
+            ensure_task_lifecycle_schema_for_bind(bind)
 
     def create_task(
         self,
@@ -90,8 +107,12 @@ class TaskLifecycleService:
         user_id: int | None = None,
         completed_at: datetime | None = None,
         actual_duration: float | None = None,
+        focus_rating: float | None = None,
+        energy_rating: float | None = None,
+        productivity_rating: float | None = None,
+        feedback_notes: str | None = None,
     ) -> Task:
-        """Record a completed outcome and label-only actual duration."""
+        """Record a completed outcome and label-only actual duration with optional user feedback."""
 
         task = self._get_task(task_id=task_id, user_id=user_id)
         if bool(task.completed) or task.lifecycle_state == TASK_STATE_COMPLETED:
@@ -115,6 +136,40 @@ class TaskLifecycleService:
         task.completed = True
         task.lifecycle_state = TASK_STATE_COMPLETED
         task.outcome_valid = True
+
+        if any(v is not None for v in (focus_rating, energy_rating, productivity_rating, feedback_notes)):
+            task.focus_rating = None if focus_rating is None else self._rating(focus_rating, "focus_rating")
+            task.energy_rating = None if energy_rating is None else self._rating(energy_rating, "energy_rating")
+            task.productivity_rating = None if productivity_rating is None else self._rating(productivity_rating, "productivity_rating")
+            task.feedback_notes = None if feedback_notes is None else self._safe_text(feedback_notes, "feedback_notes")
+            task.feedback_submitted_at = timestamp
+
+        self.session.commit()
+        self.session.refresh(task)
+        return task
+
+    def record_feedback(
+        self,
+        *,
+        task_id: int,
+        user_id: int | None = None,
+        focus_rating: float,
+        energy_rating: float,
+        productivity_rating: float,
+        feedback_notes: str | None = None,
+        submitted_at: datetime | None = None,
+    ) -> Task:
+        """Record genuine user ratings (1.0 to 5.0) after task completion."""
+
+        task = self._get_task(task_id=task_id, user_id=user_id)
+        if not bool(task.completed) or task.lifecycle_state != TASK_STATE_COMPLETED:
+            raise ValueError("Feedback can only be recorded for completed tasks.")
+        timestamp = self._timestamp(submitted_at, "submitted_at")
+        task.focus_rating = self._rating(focus_rating, "focus_rating")
+        task.energy_rating = self._rating(energy_rating, "energy_rating")
+        task.productivity_rating = self._rating(productivity_rating, "productivity_rating")
+        task.feedback_notes = None if feedback_notes is None else self._safe_text(feedback_notes, "feedback_notes")
+        task.feedback_submitted_at = timestamp
         self.session.commit()
         self.session.refresh(task)
         return task
@@ -122,16 +177,44 @@ class TaskLifecycleService:
     def get_task(self, *, task_id: int, user_id: int | None = None) -> Task:
         """Return one task by ID, optionally scoped to a user."""
 
-        return self._get_task(task_id=task_id, user_id=user_id)
+        task = self._get_task(task_id=task_id, user_id=user_id)
+        if not bool(task.completed) and task.lifecycle_state != TASK_STATE_STARTED and task.start_time is not None:
+            task.lifecycle_state = TASK_STATE_STARTED
+            self.session.commit()
+            self.session.refresh(task)
+        elif bool(task.completed) and task.lifecycle_state != TASK_STATE_COMPLETED:
+            task.lifecycle_state = TASK_STATE_COMPLETED
+            self.session.commit()
+            self.session.refresh(task)
+        return task
 
     def get_all_tasks(self, *, user_id: int) -> list[Task]:
         """Return all tasks for a given user regardless of completion state."""
-        return self.session.query(Task).filter(
+        tasks = self.session.query(Task).filter(
             Task.user_id == self._positive_int(user_id, "user_id")
         ).order_by(Task.created_at.desc()).all()
+        needs_commit = False
+        for t in tasks:
+            if not bool(t.completed) and t.lifecycle_state != TASK_STATE_STARTED and t.start_time is not None:
+                t.lifecycle_state = TASK_STATE_STARTED
+                needs_commit = True
+            elif bool(t.completed) and t.lifecycle_state != TASK_STATE_COMPLETED:
+                t.lifecycle_state = TASK_STATE_COMPLETED
+                needs_commit = True
+        if needs_commit:
+            self.session.commit()
+        return tasks
 
     def serialize_task(self, task: Task) -> dict[str, Any]:
         """Return a deterministic API-safe task representation."""
+
+        effective_lifecycle_state = task.lifecycle_state
+        if bool(task.completed) or effective_lifecycle_state == TASK_STATE_COMPLETED:
+            effective_lifecycle_state = TASK_STATE_COMPLETED
+        elif task.start_time is not None or effective_lifecycle_state == TASK_STATE_STARTED:
+            effective_lifecycle_state = TASK_STATE_STARTED
+        elif not effective_lifecycle_state:
+            effective_lifecycle_state = TASK_STATE_CREATED
 
         return {
             "id": task.id,
@@ -143,12 +226,17 @@ class TaskLifecycleService:
             "estimated_duration_unit": task.estimated_duration_unit,
             "estimated_duration_source": task.estimated_duration_source,
             "actual_duration": task.actual_duration,
-            "created_at": None if task.created_at is None else task.created_at.isoformat(),
-            "start_time": None if task.start_time is None else task.start_time.isoformat(),
-            "end_time": None if task.end_time is None else task.end_time.isoformat(),
+            "created_at": None if task.created_at is None else (task.created_at.replace(tzinfo=timezone.utc) if task.created_at.tzinfo is None else task.created_at.astimezone(timezone.utc)).isoformat(),
+            "start_time": None if task.start_time is None else (task.start_time.replace(tzinfo=timezone.utc) if task.start_time.tzinfo is None else task.start_time.astimezone(timezone.utc)).isoformat(),
+            "end_time": None if task.end_time is None else (task.end_time.replace(tzinfo=timezone.utc) if task.end_time.tzinfo is None else task.end_time.astimezone(timezone.utc)).isoformat(),
             "completed": bool(task.completed),
-            "lifecycle_state": task.lifecycle_state,
+            "lifecycle_state": effective_lifecycle_state,
             "outcome_valid": task.outcome_valid,
+            "focus_rating": task.focus_rating,
+            "energy_rating": task.energy_rating,
+            "productivity_rating": task.productivity_rating,
+            "feedback_notes": task.feedback_notes,
+            "feedback_submitted_at": None if task.feedback_submitted_at is None else (task.feedback_submitted_at.replace(tzinfo=timezone.utc) if task.feedback_submitted_at.tzinfo is None else task.feedback_submitted_at.astimezone(timezone.utc)).isoformat(),
         }
 
     def _get_task(self, *, task_id: int, user_id: int | None) -> Task:
@@ -223,40 +311,73 @@ class TaskLifecycleService:
             raise ValueError(f"{field_name} must be positive.")
         return number
 
+    @staticmethod
+    def _rating(value: Any, field_name: str) -> float:
+        if isinstance(value, bool):
+            raise ValueError(f"{field_name} must be numeric.")
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{field_name} must be numeric.") from None
+        if not math.isfinite(number):
+            raise ValueError(f"{field_name} must be finite.")
+        if not (1.0 <= number <= 5.0):
+            raise ValueError(f"{field_name} must be between 1.0 and 5.0.")
+        return round(number, 2)
 
-def ensure_task_lifecycle_schema(session: Session) -> None:
+
+def ensure_task_lifecycle_schema(session: Session, force: bool = False) -> None:
     """Add missing nullable lifecycle columns for existing Task tables without data reset."""
 
     bind = session.get_bind()
-    ensure_task_lifecycle_schema_for_bind(bind)
+    ensure_task_lifecycle_schema_for_bind(bind, force=force)
 
 
-def ensure_task_lifecycle_schema_for_bind(bind: Any) -> None:
+def ensure_task_lifecycle_schema_for_bind(bind: Any, force: bool = False) -> None:
     """Add missing nullable lifecycle columns for a SQLAlchemy bind."""
-
-    Base.metadata.create_all(bind=bind)
-    inspector = inspect(bind)
-    if "tasks" not in inspector.get_table_names():
-        return
-    existing_columns = {column["name"] for column in inspector.get_columns("tasks")}
-    missing = [
-        (name, ddl)
-        for name, ddl in (
-            ("created_at", "DATETIME"),
-            ("lifecycle_state", "VARCHAR(32)"),
-            ("outcome_valid", "BOOLEAN"),
-            ("estimated_duration_unit", "VARCHAR(16)"),
-            ("estimated_duration_source", "VARCHAR(64)"),
-        )
-        if name not in existing_columns
-    ]
-    if not missing:
+    bind_id = id(bind)
+    if not force and bind_id in _ENSURED_BINDS:
         return
 
-    dialect = bind.dialect.name
-    with bind.begin() as connection:
-        for column_name, column_type in missing:
-            if dialect == "postgresql":
-                connection.execute(text(f"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS {column_name} {column_type}"))
-            else:
-                connection.execute(text(f"ALTER TABLE tasks ADD COLUMN {column_name} {column_type}"))
+    with _SCHEMA_LOCK:
+        if not force and bind_id in _ENSURED_BINDS:
+            return
+
+        inspector = inspect(bind)
+        table_names = inspector.get_table_names()
+        if "tasks" not in table_names:
+            Base.metadata.create_all(bind=bind)
+            inspector = inspect(bind)
+            table_names = inspector.get_table_names()
+            if "tasks" not in table_names:
+                _ENSURED_BINDS.add(bind_id)
+                return
+
+        existing_columns = {column["name"] for column in inspector.get_columns("tasks")}
+        missing = [
+            (name, ddl)
+            for name, ddl in (
+                ("created_at", "DATETIME"),
+                ("lifecycle_state", "VARCHAR(32)"),
+                ("outcome_valid", "BOOLEAN"),
+                ("estimated_duration_unit", "VARCHAR(16)"),
+                ("estimated_duration_source", "VARCHAR(64)"),
+                ("focus_rating", "FLOAT"),
+                ("energy_rating", "FLOAT"),
+                ("productivity_rating", "FLOAT"),
+                ("feedback_notes", "VARCHAR(1000)"),
+                ("feedback_submitted_at", "DATETIME"),
+            )
+            if name not in existing_columns
+        ]
+        if missing:
+            dialect = getattr(bind, "dialect", None)
+            dialect_name = dialect.name if dialect else "sqlite"
+            with bind.begin() as connection:
+                for column_name, column_type in missing:
+                    if dialect_name == "postgresql":
+                        connection.execute(text(f"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS {column_name} {column_type}"))
+                    else:
+                        connection.execute(text(f"ALTER TABLE tasks ADD COLUMN {column_name} {column_type}"))
+
+        _ENSURED_BINDS.add(bind_id)

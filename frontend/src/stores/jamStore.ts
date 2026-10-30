@@ -20,7 +20,10 @@ export interface JamMessage {
 }
 
 interface JamState {
+  activeConversationId: string | null;
+  setActiveConversationId: (id: string | null) => void;
   messages: JamMessage[];
+  setMessages: (messages: JamMessage[]) => void;
   addMessage: (message: JamMessage) => void;
   updateMessage: (id: string, updates: Partial<JamMessage>) => void;
   clearMessages: () => void;
@@ -29,7 +32,10 @@ interface JamState {
 }
 
 export const useJamStore = create<JamState>((set) => ({
+  activeConversationId: null,
+  setActiveConversationId: (id) => set({ activeConversationId: id }),
   messages: [],
+  setMessages: (messages) => set({ messages }),
   
   addMessage: (message) => 
     set((state) => ({ messages: [...state.messages, message] })),
@@ -41,7 +47,7 @@ export const useJamStore = create<JamState>((set) => ({
       ),
     })),
     
-  clearMessages: () => set({ messages: [], isProcessing: false }),
+  clearMessages: () => set({ messages: [], activeConversationId: null, isProcessing: false }),
   
   isProcessing: false,
   setIsProcessing: (isProcessing) => set({ isProcessing }),

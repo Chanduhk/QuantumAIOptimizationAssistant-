@@ -9,18 +9,39 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.models.base import Base
 
+# Anchor the authoritative application database to the repository root
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+# Ensure environment variables are loaded reliably regardless of execution working directory
+_backend_env = BACKEND_DIR / ".env"
+if _backend_env.exists():
+    load_dotenv(_backend_env)
+_root_env = PROJECT_ROOT / ".env"
+if _root_env.exists():
+    load_dotenv(_root_env)
 load_dotenv()
 
-# Keep the development database local to the backend module by default.
-DEFAULT_SQLITE_PATH = Path(__file__).resolve().parents[2] / "behavior_engine.db"
+DEFAULT_SQLITE_PATH = PROJECT_ROOT / "behavior_engine.db"
 DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH.as_posix()}"
 
 
 def get_database_url() -> str:
     """Resolve the active database URL for development or production."""
     database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL).strip()
+    if not database_url:
+        return DEFAULT_DATABASE_URL
     if database_url.startswith("postgres://"):
         return database_url.replace("postgres://", "postgresql://", 1)
+    if database_url.startswith("sqlite:///"):
+        path_part = database_url[len("sqlite:///"):]
+        if path_part == ":memory:" or not path_part:
+            return database_url
+        p = Path(path_part)
+        if not p.is_absolute():
+            # Prevent working-directory divergence by anchoring relative SQLite path to PROJECT_ROOT
+            resolved = (PROJECT_ROOT / p).resolve()
+            return f"sqlite:///{resolved.as_posix()}"
     return database_url
 
 
@@ -34,7 +55,17 @@ def _build_engine(database_url: str) -> Engine:
             pool_pre_ping=True,
         )
 
-    return create_engine(database_url, future=True, pool_pre_ping=True)
+    pool_size = int(os.getenv("DB_POOL_SIZE", "10"))
+    max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+    pool_timeout = float(os.getenv("DB_POOL_TIMEOUT", "30.0"))
+    return create_engine(
+        database_url,
+        future=True,
+        pool_pre_ping=True,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
+    )
 
 
 engine = _build_engine(get_database_url())
@@ -45,6 +76,37 @@ SessionLocal = sessionmaker(
     future=True,
     expire_on_commit=False,
 )
+
+
+def get_pool_status() -> dict:
+    """Return pool diagnostics if supported by the pool implementation."""
+    pool = getattr(engine, "pool", None)
+    if pool is None:
+        return {"status": "no_pool"}
+    status: dict = {
+        "class": pool.__class__.__name__,
+    }
+    if hasattr(pool, "size"):
+        try:
+            status["size"] = pool.size()
+        except Exception:
+            pass
+    if hasattr(pool, "checkedout"):
+        try:
+            status["checked_out"] = pool.checkedout()
+        except Exception:
+            pass
+    if hasattr(pool, "overflow"):
+        try:
+            status["overflow"] = pool.overflow()
+        except Exception:
+            pass
+    if hasattr(pool, "checkedin"):
+        try:
+            status["checked_in"] = pool.checkedin()
+        except Exception:
+            pass
+    return status
 
 
 def init_db(database_url: Optional[str] = None) -> Engine:
@@ -67,6 +129,8 @@ def create_tables(database_url: Optional[str] = None) -> None:
     """Create all registered SQLAlchemy tables."""
     if database_url is not None:
         init_db(database_url)
+    import backend.app.models  # noqa: F401 - ensure Task, BehaviorData, PlanProposal are registered
+    import backend.app.models.auth  # noqa: F401 - ensure User, AuthSession are registered
     Base.metadata.create_all(bind=engine)
     from backend.app.services.task_lifecycle_service import ensure_task_lifecycle_schema_for_bind
 
@@ -78,5 +142,8 @@ def get_db() -> Generator[Session, None, None]:
     session = SessionLocal()
     try:
         yield session
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()

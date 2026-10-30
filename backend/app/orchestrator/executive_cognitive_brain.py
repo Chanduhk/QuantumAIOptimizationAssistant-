@@ -967,10 +967,11 @@ class ExecutiveCognitiveBrain:
         normalized = []
         for i, task in enumerate(tasks):
             t = dict(task)
-            if "id" not in t or not t["id"]:
+            tid = t.get("id") or t.get("task_id")
+            if not tid:
                 t["id"] = str(uuid.uuid4())
-            elif not isinstance(t["id"], str):
-                t["id"] = str(t["id"])
+            else:
+                t["id"] = str(tid)
             normalized.append(t)
         return normalized
 

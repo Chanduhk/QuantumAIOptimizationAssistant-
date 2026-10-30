@@ -1,6 +1,7 @@
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface DialogProps {
   isOpen: boolean;
@@ -9,9 +10,20 @@ interface DialogProps {
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  className?: string;
+  contentClassName?: string;
 }
 
-export function Dialog({ isOpen, onClose, title, description, children, footer }: DialogProps) {
+export function Dialog({
+  isOpen,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  className,
+  contentClassName,
+}: DialogProps) {
   // Prevent scrolling when dialog is open
   React.useEffect(() => {
     if (isOpen) {
@@ -44,7 +56,7 @@ export function Dialog({ isOpen, onClose, title, description, children, footer }
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-background/50 backdrop-blur-md"
+            className="fixed inset-0 z-50 bg-black/65 backdrop-blur-md"
             onClick={onClose}
             aria-hidden="true"
           />
@@ -54,13 +66,17 @@ export function Dialog({ isOpen, onClose, title, description, children, footer }
               aria-modal="true"
               aria-labelledby="dialog-title"
               aria-describedby={description ? "dialog-description" : undefined}
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="pointer-events-auto w-full max-w-lg overflow-hidden rounded-xl border border-border bg-surface-1 shadow-lg"
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              className={cn(
+                "pointer-events-auto flex w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border/70 bg-surface-1/95 shadow-2xl backdrop-blur-xl modal-viewport-height",
+                "max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)]",
+                className
+              )}
             >
-              <div className="flex items-center justify-between border-b border-border p-6">
+              <div className="flex shrink-0 items-center justify-between border-b border-border p-4 sm:p-6">
                 <div>
                   <h2 id="dialog-title" className="text-lg font-semibold text-content-primary">
                     {title}
@@ -79,8 +95,19 @@ export function Dialog({ isOpen, onClose, title, description, children, footer }
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <div className="p-6">{children}</div>
-              {footer && <div className="border-t border-border bg-surface-2 p-6">{footer}</div>}
+              <div
+                className={cn(
+                  "min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6",
+                  contentClassName
+                )}
+              >
+                {children}
+              </div>
+              {footer && (
+                <div className="shrink-0 border-t border-border bg-surface-2 p-4 sm:p-6">
+                  {footer}
+                </div>
+              )}
             </motion.div>
           </div>
         </>
@@ -88,3 +115,4 @@ export function Dialog({ isOpen, onClose, title, description, children, footer }
     </AnimatePresence>
   );
 }
+
