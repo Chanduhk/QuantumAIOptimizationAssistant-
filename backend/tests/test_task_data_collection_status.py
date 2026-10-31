@@ -12,6 +12,7 @@ from backend.app.ml.datasets import TaskCollectionReporter, TaskDataExtractor
 from backend.app.models.base import Base
 from backend.app.models.behavior_data import BehaviorData as _BehaviorData
 from backend.app.models.task import Task
+from backend.app.services.auth_service import CSRF_COOKIE
 from backend.app.services.task_lifecycle_service import TaskLifecycleService
 from backend.main import app
 
@@ -222,10 +223,18 @@ def test_collection_status_api_uses_actual_lifecycle_flow_with_isolated_database
     app.dependency_overrides[get_db] = override_db
     try:
         client = TestClient(app)
+        reg = client.post(
+            "/api/v1/auth/register",
+            json={"email": "collection_flow@example.com", "password": "secure password 123"},
+        )
+        user_id = reg.json()["user"]["id"]
+        csrf = client.cookies.get(CSRF_COOKIE)
+        client.headers.update({"X-CSRF-Token": csrf})
+
         create_response = client.post(
             "/api/v1/tasks",
             json={
-                "user_id": 1,
+                "user_id": user_id,
                 "title": "private api validation task",
                 "task_type": "focus",
                 "priority": 3,
@@ -233,28 +242,28 @@ def test_collection_status_api_uses_actual_lifecycle_flow_with_isolated_database
                 "created_at": BASE.isoformat(),
             },
         )
-        task_id = create_response.json()["result"]["task"]["id"]
         assert create_response.status_code == 200
+        task_id = create_response.json()["result"]["task"]["id"]
 
         start_response = client.post(
             f"/api/v1/tasks/{task_id}/start",
-            json={"user_id": 1, "started_at": (BASE + timedelta(minutes=5)).isoformat()},
+            json={"user_id": user_id, "started_at": (BASE + timedelta(minutes=5)).isoformat()},
         )
         assert start_response.status_code == 200
 
         complete_response = client.post(
             f"/api/v1/tasks/{task_id}/complete",
-            json={"user_id": 1, "completed_at": (BASE + timedelta(minutes=65)).isoformat()},
+            json={"user_id": user_id, "completed_at": (BASE + timedelta(minutes=65)).isoformat()},
         )
         assert complete_response.status_code == 200
 
-        status_response = client.get("/api/v1/tasks/data-collection/status?user_id=1")
-        readiness_response = client.get("/api/v1/tasks/ml-dataset/readiness?user_id=1")
+        status_response = client.get(f"/api/v1/tasks/data-collection/status?user_id={user_id}")
+        readiness_response = client.get(f"/api/v1/tasks/ml-dataset/readiness?user_id={user_id}")
+        assert status_response.status_code == 200
+        assert readiness_response.status_code == 200
         status_report = status_response.json()["result"]["collection_report"]
         readiness_result = readiness_response.json()["result"]
 
-        assert status_response.status_code == 200
-        assert readiness_response.status_code == 200
         assert status_report["lifecycle_valid_records"] == 1
         assert status_report["f3_dataset_rows"] == 1
         assert readiness_result["adapter_report"]["dataset_row_count"] == 1
@@ -275,10 +284,18 @@ def test_api_rejects_invalid_lifecycle_transition_without_dataset_row():
     app.dependency_overrides[get_db] = override_db
     try:
         client = TestClient(app)
+        reg = client.post(
+            "/api/v1/auth/register",
+            json={"email": "lifecycle_transition@example.com", "password": "secure password 123"},
+        )
+        user_id = reg.json()["user"]["id"]
+        csrf = client.cookies.get(CSRF_COOKIE)
+        client.headers.update({"X-CSRF-Token": csrf})
+
         create_response = client.post(
             "/api/v1/tasks",
             json={
-                "user_id": 1,
+                "user_id": user_id,
                 "title": "private api validation task",
                 "task_type": "focus",
                 "priority": 3,
@@ -286,12 +303,13 @@ def test_api_rejects_invalid_lifecycle_transition_without_dataset_row():
                 "created_at": BASE.isoformat(),
             },
         )
+        assert create_response.status_code == 200
         task_id = create_response.json()["result"]["task"]["id"]
         complete_response = client.post(
             f"/api/v1/tasks/{task_id}/complete",
-            json={"user_id": 1, "completed_at": (BASE + timedelta(minutes=65)).isoformat()},
+            json={"user_id": user_id, "completed_at": (BASE + timedelta(minutes=65)).isoformat()},
         )
-        report = TaskCollectionReporter(session).report(user_id=1)
+        report = TaskCollectionReporter(session).report(user_id=user_id)
 
         assert complete_response.status_code == 400
         assert report.f3_dataset_rows == 0

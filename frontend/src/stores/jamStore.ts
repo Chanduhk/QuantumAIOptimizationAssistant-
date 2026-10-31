@@ -17,6 +17,9 @@ export interface JamMessage {
   errorMessage?: string;
   retryCommand?: string;
   isPending?: boolean;
+
+  // Loaded from a saved conversation rather than produced in this session
+  fromHistory?: boolean;
 }
 
 interface JamState {

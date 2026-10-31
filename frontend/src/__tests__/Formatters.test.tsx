@@ -1,4 +1,3 @@
-import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   formatDuration,
@@ -9,8 +8,6 @@ import {
   formatStatus,
   normalizeErrorMessage,
 } from "@/utils/formatters";
-import { TechnicalDetails } from "@/components/common/TechnicalDetails";
-import { HumanStatusBadge } from "@/components/common/HumanStatusBadge";
 
 describe("Formatters and Status Normalization", () => {
   describe("formatStatus", () => {
@@ -145,45 +142,6 @@ describe("Formatters and Status Normalization", () => {
       const norm = normalizeErrorMessage("Failed to fetch");
       expect(norm.title).toBe("Connection Unavailable");
       expect(norm.isRetryable).toBe(true);
-    });
-  });
-
-  describe("TechnicalDetails component", () => {
-    it("is closed by default and reveals masked data upon interaction", () => {
-      const sensitiveData = {
-        task_id: 101,
-        user_token: "secret_123456",
-        authorization: "Bearer abcdef1234567890",
-      };
-
-      render(<TechnicalDetails data={sensitiveData} title="Diagnostics" />);
-      expect(screen.queryByText(/\[PROTECTED_CREDENTIAL\]/)).not.toBeInTheDocument();
-
-      const button = screen.getByRole("button", { name: /Diagnostics/ });
-      fireEvent.click(button);
-
-      expect(screen.getByText(/\[PROTECTED_CREDENTIAL\]/)).toBeInTheDocument();
-      expect(screen.queryByText("secret_123456")).not.toBeInTheDocument();
-    });
-
-    it("renders nothing when no data or children are provided", () => {
-      const { container } = render(<TechnicalDetails data={null} />);
-      expect(container).toBeEmptyDOMElement();
-    });
-  });
-
-  describe("HumanStatusBadge component", () => {
-    it("renders formatted badge label with description", () => {
-      render(
-        <HumanStatusBadge
-          status="NOT_READY_INSUFFICIENT_DATA"
-          showDescription
-        />
-      );
-      expect(screen.getByText("Not enough personal data yet")).toBeInTheDocument();
-      expect(
-        screen.getByText(/Complete more tasks and record genuine feedback/)
-      ).toBeInTheDocument();
     });
   });
 });

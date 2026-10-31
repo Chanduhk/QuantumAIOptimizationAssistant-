@@ -74,6 +74,7 @@ def test_vector_memory_reuses_loaded_embedding_model(tmp_path, monkeypatch):
 
     monkeypatch.setattr(VectorMemorySystem, "_load_model_uncached", load_model)
     first = VectorMemorySystem(storage_directory=str(tmp_path / "first"), model_name=model_name)
+    VectorMemorySystem.wait_for_model_load(model_name, timeout=5.0)
     second = VectorMemorySystem(storage_directory=str(tmp_path / "second"), model_name=model_name)
 
     assert first.model is loaded_model
@@ -200,7 +201,7 @@ def test_authenticated_jam_command_response_and_user_identity(jam_environment, m
     calls = []
 
     class StubInteraction:
-        async def process_command(self, *, user_id: int, command: str):
+        async def process_command(self, *, user_id: int, command: str, conversation_turns: Optional[List[Dict[str, str]]] = None, **kwargs):
             calls.append((user_id, command))
             return {"intent": "get_recommendations", "result": {"message": "Recommendation result"}}
 
@@ -211,10 +212,10 @@ def test_authenticated_jam_command_response_and_user_identity(jam_environment, m
         json={"user_id": user_id, "command": "get recommendations", "days_back": 90},
     )
     assert response.status_code == 200
-    assert response.json() == {
-        "intent": "get_recommendations",
-        "result": {"message": "Recommendation result"},
-    }
+    data = response.json()
+    assert data["intent"] == "get_recommendations"
+    assert data["result"] == {"message": "Recommendation result"}
+    assert "conversation_id" in data
     assert calls == [(user_id, "get recommendations")]
 
 
@@ -251,7 +252,7 @@ def test_jam_command_authentication_and_backend_error(jam_environment, monkeypat
     user_id = register_user(client)
 
     class FailedInteraction:
-        async def process_command(self, *, user_id: int, command: str):
+        async def process_command(self, *, user_id: int, command: str, conversation_turns: Optional[List[Dict[str, str]]] = None, **kwargs):
             raise ValueError("AI engine unavailable")
 
     monkeypatch.setattr(main, "_build_interaction_layer", lambda db, days_back: FailedInteraction())
@@ -277,8 +278,9 @@ def test_open_ended_command_is_not_routed_to_planning_or_optimization():
         command="Hello, can you explain this idea?",
     )
     trace = BrainExecutionTrace(request_id=request.request_id, started_at=time.time())
-    with pytest.raises(ValueError, match="Open-ended JAM chat is not available"):
-        asyncio.run(controller._route_and_execute(request, trace))
+    res = asyncio.run(controller._route_and_execute(request, trace))
+    assert res.success is True
+    assert res.raw_result.get("action") == "general_answer"
     controller._execute_central_planning.assert_not_awaited()
 
 

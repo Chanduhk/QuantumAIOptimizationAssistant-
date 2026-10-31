@@ -109,20 +109,20 @@ def assess_duration_model_readiness(session: Session, *, user_id: Optional[int] 
         status = NOT_READY_INVALID_DATA
         blocking.extend(quality.issues)
         actions.append("Resolve data quality anomalies or timestamp ordering violations")
-    elif row_count < MINIMUM_EVALUATION_ROWS:
-        status = NOT_READY_INSUFFICIENT_DATA
-        blocking.append(f"insufficient_samples_{row_count}_below_minimum_{MINIMUM_EVALUATION_ROWS}")
-        actions.append(f"Execute and complete at least {MINIMUM_EVALUATION_ROWS - row_count} more verified tasks")
-    elif train_count < MINIMUM_TRAINING_ROWS:
-        status = NOT_READY_INSUFFICIENT_DATA
-        blocking.append(f"insufficient_training_partition_{train_count}_below_{MINIMUM_TRAINING_ROWS}")
-        actions.append(f"Execute and complete more verified tasks so chronological training partition reaches at least {MINIMUM_TRAINING_ROWS} (currently {train_count})")
-    elif val_count < 1:
-        status = NOT_READY_INSUFFICIENT_DATA
-        blocking.append("empty_evaluation_partition")
-        actions.append("Execute and complete additional verified tasks to establish a separate chronological evaluation partition")
     else:
         status = READY_FOR_TRAINING
+        if row_count < MINIMUM_EVALUATION_ROWS:
+            status = NOT_READY_INSUFFICIENT_DATA
+            blocking.append(f"insufficient_samples_{row_count}_below_minimum_{MINIMUM_EVALUATION_ROWS}")
+            actions.append(f"Execute and complete at least {MINIMUM_EVALUATION_ROWS - row_count} more verified tasks")
+        if train_count < MINIMUM_TRAINING_ROWS:
+            status = NOT_READY_INSUFFICIENT_DATA
+            blocking.append(f"insufficient_training_partition_{train_count}_below_{MINIMUM_TRAINING_ROWS}")
+            actions.append(f"Execute and complete more verified tasks so chronological training partition reaches at least {MINIMUM_TRAINING_ROWS} (currently {train_count})")
+        if val_count < 1:
+            status = NOT_READY_INSUFFICIENT_DATA
+            blocking.append("empty_evaluation_partition")
+            actions.append("Execute and complete additional verified tasks to establish a separate chronological evaluation partition")
 
     return ComponentReadiness(
         component_name="DurationRatioModel",

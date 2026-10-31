@@ -2,175 +2,150 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  HELIOX design tokens.
+  Light mode is "paper": warm off-white surfaces with ink text.
+  Dark mode is "observatory": deep ink surfaces with a solar-gold primary.
+  Values are HSL triplets so Tailwind can apply alpha (`bg-primary/10`).
+*/
 @layer base {
   :root {
-    /* 
-      HELIOX AURORA (Luminous Starlight Theme)
-      Crisp, pearl-white, calm, celestial clarity.
-    */
-    --background: 220 25% 97%;
-    
-    /* Surfaces */
+    --background: 40 23% 97%;
     --surface-1: 0 0% 100%;
-    --surface-2: 220 20% 95%;
-    --surface-3: 220 18% 90%;
-    
-    /* Borders */
-    --border: 220 22% 88%;
-    --border-subtle: 220 22% 93%;
-    
-    /* Typography */
-    --content-primary: 228 45% 12%;
-    --content-secondary: 224 18% 44%;
-    --content-tertiary: 222 14% 58%;
-    --content-muted: 220 12% 70%;
-    
-    /* Accents */
-    --primary: 218 78% 46%; 
-    --primary-hover: 218 78% 40%;
-    --primary-foreground: 210 40% 98%;
-    
-    /* Quantum / Cosmic */
-    --quantum: 248 55% 52%;
-    --quantum-foreground: 210 40% 98%;
-    
-    /* Status */
-    --success: 152 65% 38%;
-    --warning: 38 85% 44%;
-    --error: 352 70% 46%;
-    --info: 214 80% 46%;
-    
-    /* Focus Ring */
-    --ring: 218 78% 46%;
-    --radius: 0.625rem;
+    --surface-2: 40 18% 95%;
+    --surface-3: 40 12% 90%;
+    --border: 36 10% 85%;
+    --border-subtle: 38 14% 91%;
+    --highlight: 0 0% 100%;
+
+    --content-primary: 224 32% 11%;
+    --content-secondary: 222 13% 32%;
+    --content-tertiary: 222 8% 46%;
+    --content-muted: 222 6% 60%;
+
+    --primary: 33 92% 42%;
+    --primary-hover: 30 90% 37%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 38 90% 93%;
+    --quantum: 210 78% 46%;
+    --quantum-foreground: 0 0% 100%;
+
+    --success: 155 64% 32%;
+    --warning: 22 88% 47%;
+    --error: 352 70% 48%;
+    --info: 210 78% 46%;
+    --ring: 33 92% 42%;
   }
 
   .dark {
-    /* 
-      HELIOX MILKY WAY GALAXY (Premium Space & Celestial Theme)
-      Space-black, deep midnight navy, soft cosmic indigo, pearl-white typography.
-      No neon cyan, no electric purple, no harsh glow.
-    */
-    --background: 230 45% 3.5%;
-    
-    /* Surfaces */
-    --surface-1: 228 38% 7.8%;
-    --surface-2: 226 28% 11.8%;
-    --surface-3: 224 22% 16.5%;
-    
-    /* Borders */
-    --border: 224 22% 19%;
-    --border-subtle: 226 25% 12%;
-    
-    /* Typography */
-    --content-primary: 216 33% 97%;
-    --content-secondary: 218 18% 75%;
-    --content-tertiary: 220 15% 58%;
-    --content-muted: 220 12% 42%;
-    
-    /* Accents: Muted Celestial Blue & Soft Cosmic Indigo */
-    --primary: 214 70% 64%;
-    --primary-hover: 214 75% 72%;
-    --primary-foreground: 230 45% 5%;
-    
-    /* Quantum: Soft Cosmic Indigo */
-    --quantum: 245 48% 66%;
-    --quantum-foreground: 230 45% 5%;
-    
-    /* Status: Balanced celestial tones */
-    --success: 152 52% 52%;
-    --warning: 36 72% 56%;
-    --error: 352 62% 58%;
-    --info: 214 70% 64%;
-    
-    /* Focus Ring */
-    --ring: 214 70% 64%;
+    --background: 224 30% 4.5%;
+    --surface-1: 224 24% 7.5%;
+    --surface-2: 224 20% 10.5%;
+    --surface-3: 224 17% 14.5%;
+    --border: 224 15% 17%;
+    --border-subtle: 224 17% 12.5%;
+    --highlight: 0 0% 100%;
+
+    --content-primary: 40 25% 95%;
+    --content-secondary: 222 12% 74%;
+    --content-tertiary: 222 9% 56%;
+    --content-muted: 222 8% 40%;
+
+    --primary: 38 94% 58%;
+    --primary-hover: 40 96% 64%;
+    --primary-foreground: 30 50% 7%;
+    --primary-soft: 36 60% 12%;
+    --quantum: 210 85% 63%;
+    --quantum-foreground: 222 40% 8%;
+
+    --success: 152 58% 50%;
+    --warning: 24 94% 61%;
+    --error: 352 86% 66%;
+    --info: 210 85% 63%;
+    --ring: 38 94% 58%;
   }
-}
 
-/* Subtle Milky Way / Cosmic Dust Atmosphere */
-.milky-way-atmosphere {
-  position: relative;
-  background-color: hsl(var(--background));
-  background-image: 
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(56, 88, 142, 0.12), transparent 70%),
-    radial-gradient(ellipse 60% 40% at 85% 15%, rgba(76, 68, 130, 0.08), transparent 60%),
-    radial-gradient(ellipse 70% 50% at 15% 85%, rgba(42, 65, 110, 0.07), transparent 65%);
-}
+  * {
+    @apply border-border;
+  }
 
-.neural-core-fallback {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  border-radius: 9999px;
-  background: radial-gradient(circle at 48% 48%, rgba(98, 138, 202, 0.18), rgba(88, 76, 148, 0.12) 42%, rgba(5, 7, 14, 0.96) 74%);
-  box-shadow: 0 0 40px rgba(78, 115, 180, 0.12), inset 0 0 30px rgba(96, 84, 160, 0.1);
-}
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
 
-.neural-core-fallback::after {
-  position: absolute;
-  inset: 10%;
-  border: 1px solid rgba(148, 185, 240, 0.2);
-  border-radius: inherit;
-  content: "";
-  animation: heliox-core-breathe 6s ease-in-out infinite alternate;
-}
-
-.liquid-glass-card {
-  position: relative;
-  background: hsl(var(--surface-1) / 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid hsl(var(--border) / 0.7);
-  box-shadow: 0 4px 20px -2px rgba(2, 4, 10, 0.3);
-}
-
-.liquid-glass-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08) 30%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.08) 70%, transparent);
-  pointer-events: none;
-}
-
-.heliox-pipeline-stage {
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-}
-
-.heliox-pipeline-stage:hover,
-.heliox-pipeline-stage:focus-within {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(10, 20, 45, 0.25);
-  border-color: hsl(var(--primary) / 0.35);
-}
-
-@keyframes heliox-core-breathe {
-  from { transform: scale(.98); opacity: .45; }
-  to { transform: scale(1.02); opacity: .75; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .neural-core-fallback::after { animation: none; }
-  .heliox-pipeline-stage { transition: none; transform: none; }
-}
-
-@layer base {
   body {
-    @apply bg-background text-content-primary font-sans antialiased selection:bg-primary/20 selection:text-content-primary;
+    @apply bg-background text-content-primary font-sans antialiased;
+    font-feature-settings: "ss01", "cv11";
+    min-height: 100dvh;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.28);
   }
 
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button {
+    opacity: 0.4;
   }
 }
 
-@layer utilities {
-  .modal-viewport-height {
-    max-height: calc(100vh - 2rem);
-    max-height: calc(100dvh - 2rem);
+@layer components {
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
+
+  /* Eyebrow label used above section titles and stat labels. */
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.08em] text-content-tertiary;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Faint dot grid used behind hero areas. */
+  .bg-grid {
+    background-image: radial-gradient(hsl(var(--content-primary) / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--surface-2)) 0%,
+      hsl(var(--surface-3)) 50%,
+      hsl(var(--surface-2)) 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+
+  /* Markdown answers from the assistant. */
+  .prose-heliox p { @apply mb-2 last:mb-0 leading-relaxed; }
+  .prose-heliox ul { @apply mb-2 list-disc pl-5 space-y-1; }
+  .prose-heliox ol { @apply mb-2 list-decimal pl-5 space-y-1; }
+  .prose-heliox strong { @apply font-semibold text-content-primary; }
+  .prose-heliox code { @apply rounded bg-surface-3 px-1 py-0.5 font-mono text-[0.85em]; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

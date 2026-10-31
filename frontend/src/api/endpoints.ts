@@ -367,6 +367,19 @@ export interface ExecutivePlanResponse {
   };
 }
 
+export interface ActiveProposal {
+  id: string;
+  user_id: number;
+  version: number;
+  status: string;
+  goal_text?: string | null;
+  available_hours?: number | null;
+  schedule: Array<Record<string, unknown>>;
+  created_at?: string | null;
+  expires_at?: string | null;
+  [key: string]: unknown;
+}
+
 export interface CommandRequest {
   user_id: number;
   command: string;
@@ -492,6 +505,8 @@ export const api = {
       apiClient.post<MultiEngineResponse>("/api/v1/ai/plan/accept", data).then(res => res.data),
     rejectPlan: (data: { user_id: number; proposal_id?: string }) =>
       apiClient.post<MultiEngineResponse>("/api/v1/ai/plan/reject", data).then(res => res.data),
+    activePlan: () =>
+      apiClient.get<{ result: { active_proposal: ActiveProposal | null } }>("/api/v1/ai/plan/active").then(res => res.data.result.active_proposal),
     providerStatus: () =>
       apiClient.get<ProviderStatusResponse>("/api/v1/ai/provider-status").then(res => res.data),
     testProvider: () =>

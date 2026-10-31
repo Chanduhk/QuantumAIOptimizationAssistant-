@@ -19,6 +19,7 @@ from backend.app.ml.datasets import (
 from backend.app.models.base import Base
 from backend.app.models.behavior_data import BehaviorData as _BehaviorData
 from backend.app.models.task import Task
+from backend.app.services.auth_service import CSRF_COOKIE
 from backend.app.services.task_lifecycle_service import TaskLifecycleService
 from backend.main import app
 
@@ -496,9 +497,13 @@ def test_api_response_includes_quality_audit():
     app.dependency_overrides[get_db] = override_db
     try:
         client = TestClient(app)
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": "audit_user@example.com", "password": "secure test password 123"},
+        )
         response = client.get("/api/v1/tasks/data-collection/status")
-        payload = response.json()["result"]
         assert response.status_code == 200
+        payload = response.json()["result"]
         assert payload["quality_audit"]["readiness_status"] == "NOT_READY_NO_DATA"
     finally:
         app.dependency_overrides.clear()
@@ -513,9 +518,13 @@ def test_readiness_endpoint_includes_quality_audit():
     app.dependency_overrides[get_db] = override_db
     try:
         client = TestClient(app)
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": "readiness_user@example.com", "password": "secure test password 123"},
+        )
         response = client.get("/api/v1/tasks/ml-dataset/readiness")
-        payload = response.json()["result"]
         assert response.status_code == 200
+        payload = response.json()["result"]
         assert "quality_audit" in payload
     finally:
         app.dependency_overrides.clear()

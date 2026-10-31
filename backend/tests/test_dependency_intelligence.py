@@ -209,8 +209,8 @@ def test_orchestrator_dependency_enrichment_is_optional_and_additive() -> None:
     )
     enriched = orchestrator._enrich_tasks_with_dependencies(normalized)
 
-    assert enriched[0]["id"] == "input-1"
-    assert enriched[1]["depends_on_task_ids"] == ["input-1"]
+    assert enriched[0]["id"] == "a"
+    assert enriched[1]["depends_on_task_ids"] == ["a"]
     assert enriched[1]["blocked"] is True
     assert enriched[1]["dependency_score"] < 0
 

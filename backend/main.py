@@ -987,8 +987,8 @@ class ProviderStatusResponse(BaseModel):
     response_model=ProviderStatusResponse,
 )
 def get_ai_provider_status() -> ProviderStatusResponse:
-    from backend.app.interface.llm_provider import OpenAIProvider
-    provider = OpenAIProvider()
+    from backend.app.interface.llm_provider import get_default_llm_provider
+    provider = get_default_llm_provider()
     return ProviderStatusResponse(**provider.get_status())
 
 
@@ -997,9 +997,13 @@ def get_ai_provider_status() -> ProviderStatusResponse:
     response_model=ProviderTestResponse,
 )
 def test_ai_provider_connection() -> ProviderTestResponse:
-    from backend.app.interface.llm_provider import OpenAIProvider
-    provider = OpenAIProvider()
-    success, message = provider.test_connection()
+    from backend.app.interface.llm_provider import get_default_llm_provider
+    provider = get_default_llm_provider()
+    if hasattr(provider, "test_connection"):
+        success, message = provider.test_connection()
+    else:
+        success = provider.is_configured()
+        message = f"Provider {provider.provider_name} does not implement active test connection."
     status_dict = provider.get_status()
     return ProviderTestResponse(
         success=success,

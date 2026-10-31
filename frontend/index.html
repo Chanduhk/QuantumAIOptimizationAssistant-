@@ -3,29 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="HELIOX AI — quantum-aware personal optimization assistant." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <title>HELIOX AI | Intelligent Systems. Optimized Decisions.</title>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>HELIOX AI</title>
     <script>
+      // Resolve the theme before first paint to avoid a light/dark flash.
       try {
-        const store = localStorage.getItem("heliox-ui-storage");
-        if (store) {
-          const parsed = JSON.parse(store);
-          const theme = parsed.state?.theme || "system";
-          const root = window.document.documentElement;
-          if (theme === "obsidian") {
-            root.classList.add("dark");
-          } else if (theme === "aurora") {
-            root.classList.remove("dark");
-          } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-            root.classList.add("dark");
-          }
-        } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-          window.document.documentElement.classList.add("dark");
-        }
-      } catch (e) {}
+        var theme = "system";
+        var stored = localStorage.getItem("heliox-ui-storage");
+        if (stored) theme = (JSON.parse(stored).state || {}).theme || "system";
+        if (theme === "obsidian") theme = "dark";
+        if (theme === "aurora") theme = "light";
+        var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      } catch (e) {
+        document.documentElement.classList.add("dark");
+      }
     </script>
   </head>
   <body>

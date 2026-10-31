@@ -34,7 +34,8 @@ class RLScheduler:
         )
         self.q_table: Dict[str, Dict[str, float]] = {}
         self.readiness_status = "NOT_READY_INSUFFICIENT_EPISODES"
-        self._load_policy()
+        if policy_path is not None:
+            self._load_policy()
 
     def train_agent(
         self,
@@ -239,29 +240,15 @@ class RLScheduler:
         )
 
     def _load_policy(self) -> None:
-        loaded = False
         if self.policy_path.exists():
             try:
                 data = json.loads(self.policy_path.read_text(encoding="utf-8"))
                 if isinstance(data, dict):
                     self.q_table = data
                     if any(any(v != 0.0 for v in actions.values()) for actions in self.q_table.values() if isinstance(actions, dict)):
-                        loaded = True
                         self.readiness_status = "TRAINED"
             except Exception:
                 pass
-
-        if not loaded:
-            benchmark_candidate = self.policy_path.parent / "rl_scheduler_benchmark_candidate.json"
-            if benchmark_candidate.exists():
-                try:
-                    data = json.loads(benchmark_candidate.read_text(encoding="utf-8"))
-                    if isinstance(data, dict) and any(any(v != 0.0 for v in actions.values()) for actions in data.values() if isinstance(actions, dict)):
-                        self.q_table = data
-                        self.readiness_status = "TRAINED"
-                        loaded = True
-                except Exception:
-                    pass
 
     def _save_policy(self) -> None:
         self.policy_path.parent.mkdir(parents=True, exist_ok=True)

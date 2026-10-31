@@ -102,8 +102,13 @@ async def test_real_pipeline_fallback_behavior(mock_session, test_engine_registr
         return_value=({"unknown_task_type": "other"}, [], {})
     )
     
+    tasks = [
+        {"title": "Define sub-goals", "type": "planning", "priority": 7, "estimated_duration": 1.0, "estimated_duration_unit": "hours", "estimated_duration_source": "user_goal"},
+        {"title": "Execute main work block", "type": "general", "priority": 8, "estimated_duration": 1.5, "estimated_duration_unit": "hours", "estimated_duration_source": "user_goal"},
+        {"title": "Review completion criteria", "type": "review", "priority": 6, "estimated_duration": 1.0, "estimated_duration_unit": "hours", "estimated_duration_source": "user_goal"},
+    ]
     # We let the real pipeline run.
-    result = await pipeline.run_pipeline(goal_text="plan my day", user_id=1)
+    result = await pipeline.run_pipeline(goal_text="plan my day", user_id=1, tasks=tasks)
     
     # Verify cold-start generated 3 tasks
     assert "schedule" in result

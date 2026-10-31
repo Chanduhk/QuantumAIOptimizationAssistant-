@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -377,8 +378,9 @@ def test_quantum_outputs_do_not_leak_quantum_internals() -> None:
 
 
 def test_source_file_has_no_forbidden_quantum_solver_calls() -> None:
-    source = open("backend/app/orchestrator/executive_quantum_integration.py", encoding="utf-8").read()
-    evidence_source = open("backend/app/orchestrator/executive_quantum_evidence.py", encoding="utf-8").read()
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "backend" / "app" / "orchestrator" / "executive_quantum_integration.py").read_text(encoding="utf-8")
+    evidence_source = (root / "backend" / "app" / "orchestrator" / "executive_quantum_evidence.py").read_text(encoding="utf-8")
 
     assert "QAOAEngine" not in source
     assert "ExactClassicalSolver" not in source
@@ -388,7 +390,8 @@ def test_source_file_has_no_forbidden_quantum_solver_calls() -> None:
 
 
 def test_source_file_has_no_executive_import_in_e7() -> None:
-    source = open("backend/app/quantum/integration/integration_engine.py", encoding="utf-8").read()
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "backend" / "app" / "quantum" / "integration" / "integration_engine.py").read_text(encoding="utf-8")
 
     assert "executive_cognitive_brain" not in source
     assert "ExecutiveCognitiveBrain" not in source

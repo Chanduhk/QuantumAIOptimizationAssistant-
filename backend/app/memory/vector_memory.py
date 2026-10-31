@@ -44,7 +44,7 @@ class VectorMemorySystem:
         self.model_name = model_name
         self.records: List[Dict[str, Any]] = []
         self.embedding_matrix = np.empty((0, 384), dtype=np.float32)
-        self.model = self._load_model()
+        self._load_model()
         self.index = None
         self._load_storage()
 
@@ -113,6 +113,19 @@ class VectorMemorySystem:
             "memory_count": len(matching_records),
             "recent_memories": matching_records[-limit:],
         }
+
+    @property
+    def model(self) -> Optional[Any]:
+        if not self.model_name:
+            return None
+        with self._model_cache_lock:
+            return self._model_cache.get(self.model_name)
+
+    @model.setter
+    def model(self, value: Optional[Any]) -> None:
+        if self.model_name:
+            with self._model_cache_lock:
+                self._model_cache[self.model_name] = value
 
     def _load_model(self) -> Optional[Any]:
         if not self.model_name:

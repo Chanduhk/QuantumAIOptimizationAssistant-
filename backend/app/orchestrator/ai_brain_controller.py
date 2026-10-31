@@ -135,8 +135,8 @@ class AIBrainController:
                 self.session.query(Task.id)
                 .filter(Task.user_id == request.user_id, Task.completed.is_(False))
                 .count()
-            )
-            proposal = PlanProposalService(self.session).get_active_proposal(request.user_id)
+            ) if self.session is not None else 0
+            proposal = PlanProposalService(self.session).get_active_proposal(request.user_id) if self.session is not None else None
             context_bits = [f"User has {pending_count} active pending tasks."]
             if proposal:
                 context_bits.append(f"There is an active schedule proposal ({len(proposal.tasks_snapshot or [])} scheduled tasks).")
@@ -712,12 +712,18 @@ class AIBrainController:
         # ---------------------------------------------------------
         st_class = time.time()
         decision_pipeline = self._get_decision_pipeline()
+        pipeline_kwargs = {}
+        if explicit_tasks:
+            pipeline_kwargs["tasks"] = explicit_tasks
+        if available_hours is not None:
+            pipeline_kwargs["available_hours"] = available_hours
+        if constraints is not None:
+            pipeline_kwargs["constraints"] = constraints
+
         pipeline_result = await decision_pipeline.run_pipeline(
             goal_text=goal_text,
             user_id=user_id,
-            tasks=explicit_tasks,
-            available_hours=available_hours,
-            constraints=constraints,
+            **pipeline_kwargs,
         )
         classical_schedule = pipeline_result.get("schedule", [])
         et_class = time.time()

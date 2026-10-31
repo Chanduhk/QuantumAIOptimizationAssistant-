@@ -65,8 +65,11 @@ def db_session():
 
 def test_hybrid_parser_llm_and_deterministic_fallback(test_clock, monkeypatch):
     """Test HybridPlanningParser uses LLM when configured, and falls back gracefully when unconfigured or failing."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("HELIOX_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("HELIOX_LLM_PROVIDER", raising=False)
     # 1. Unconfigured fallback
     parser = HybridPlanningParser(clock=test_clock)
     assert not parser.llm_provider.is_configured()

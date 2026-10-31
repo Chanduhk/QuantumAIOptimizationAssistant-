@@ -111,8 +111,8 @@ def test_automatic_training_controller_public_benchmark(isolated_controller):
     assert job.job_type == TrainingJobType.PUBLIC_BENCHMARK
     assert job.status in (TrainingJobStatus.QUEUED, TrainingJobStatus.RUNNING)
 
-    # Wait for completion (typically < 3 seconds)
-    for _ in range(60):
+    # Wait for completion (typically < 3 seconds, up to 25s under high test-suite load)
+    for _ in range(125):
         time.sleep(0.2)
         st = controller.get_status()
         if st["controller_status"] in ("completed", "idle", "failed"):

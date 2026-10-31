@@ -73,30 +73,47 @@ class ConfiguredLLMProvider(BaseLLMProvider):
         raw_endpoint = (endpoint if endpoint is not None else os.getenv("HELIOX_LLM_ENDPOINT", "")).strip()
         raw_model = (model if model is not None else os.getenv("HELIOX_LLM_MODEL", "")).strip()
 
-        # Check standard environment variables for OpenAI only if explicit key/provider is not empty
+        # Check standard environment variables for Google Gemini (primary provider)
+        gemini_key = (os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")).strip() if api_key is None else ""
+        gemini_model = os.getenv("GEMINI_MODEL", "").strip()
+        gemini_endpoint = os.getenv("GEMINI_ENDPOINT", "").strip()
+        gemini_timeout = os.getenv("GEMINI_TIMEOUT", "").strip()
+
+        # Check standard environment variables for OpenAI
         openai_key = os.getenv("OPENAI_API_KEY", "").strip() if api_key is None else ""
         openai_model = os.getenv("OPENAI_MODEL", "").strip()
         openai_base = os.getenv("OPENAI_BASE_URL", os.getenv("OPENAI_API_BASE", "")).strip()
         openai_timeout = os.getenv("OPENAI_TIMEOUT", "").strip()
 
         # Auto-detect provider and key from standard environment variables if not explicitly provided
+        # Google Gemini is the default primary provider
         if not raw_provider and provider is None:
-            if openai_key and api_key is None:
-                raw_provider = "openai"
-                raw_key = raw_key or openai_key
-            elif os.getenv("GEMINI_API_KEY") and api_key is None:
+            if gemini_key and api_key is None:
                 raw_provider = "gemini"
-                raw_key = raw_key or os.getenv("GEMINI_API_KEY", "").strip()
+                raw_key = raw_key or gemini_key
+            elif os.getenv("OLLAMA_HOST") and provider is None:
+                raw_provider = "ollama"
             elif os.getenv("ANTHROPIC_API_KEY") and api_key is None:
                 raw_provider = "anthropic"
                 raw_key = raw_key or os.getenv("ANTHROPIC_API_KEY", "").strip()
             elif os.getenv("GROQ_API_KEY") and api_key is None:
                 raw_provider = "groq"
                 raw_key = raw_key or os.getenv("GROQ_API_KEY", "").strip()
-            elif os.getenv("OLLAMA_HOST") and provider is None:
-                raw_provider = "ollama"
+            elif openai_key and api_key is None:
+                # If only OpenAI key is present and no explicit provider was requested
+                raw_provider = "openai"
+                raw_key = raw_key or openai_key
+            else:
+                raw_provider = "gemini"
 
-        if raw_provider == "openai":
+        if raw_provider == "gemini":
+            if not raw_key and gemini_key and api_key is None:
+                raw_key = gemini_key
+            if not raw_model:
+                raw_model = gemini_model or "gemini-2.5-flash"
+            if not raw_endpoint:
+                raw_endpoint = gemini_endpoint or f"https://generativelanguage.googleapis.com/v1beta/models/{raw_model}:generateContent"
+        elif raw_provider == "openai":
             if not raw_key and openai_key and api_key is None:
                 raw_key = openai_key
             if not raw_model:
@@ -104,16 +121,14 @@ class ConfiguredLLMProvider(BaseLLMProvider):
             if not raw_endpoint:
                 raw_endpoint = f"{openai_base.rstrip('/')}/chat/completions" if openai_base else "https://api.openai.com/v1/chat/completions"
         elif not raw_model:
-            if raw_provider == "gemini":
-                raw_model = "gemini-1.5-flash"
-            elif raw_provider == "anthropic":
+            if raw_provider == "anthropic":
                 raw_model = "claude-3-5-sonnet-20241022"
             elif raw_provider == "groq":
                 raw_model = "llama-3.1-70b-versatile"
             elif raw_provider == "ollama":
                 raw_model = "llama3"
             else:
-                raw_model = "gpt-4o-mini"
+                raw_model = "gemini-2.5-flash"
 
         if not raw_endpoint:
             if raw_provider == "openai":
@@ -128,9 +143,14 @@ class ConfiguredLLMProvider(BaseLLMProvider):
                 host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
                 raw_endpoint = f"{host}/v1/chat/completions"
 
-        default_timeout = 10.0 if raw_provider == "openai" else 5.0
+        default_timeout = 10.0
         if timeout_seconds is not None:
             effective_timeout = float(timeout_seconds)
+        elif raw_provider == "gemini" and gemini_timeout:
+            try:
+                effective_timeout = float(gemini_timeout)
+            except ValueError:
+                effective_timeout = default_timeout
         elif raw_provider == "openai" and openai_timeout:
             try:
                 effective_timeout = float(openai_timeout)
@@ -155,7 +175,7 @@ class ConfiguredLLMProvider(BaseLLMProvider):
         if self.is_configured():
             self._last_status = f"{self._provider}_configured"
         else:
-            self._last_status = f"{self._provider or 'openai'}_unconfigured"
+            self._last_status = f"{self._provider or 'gemini'}_unconfigured"
         self._last_error: Optional[str] = None
         self._error_category: Optional[str] = None
 
@@ -180,13 +200,51 @@ class ConfiguredLLMProvider(BaseLLMProvider):
         """Return True if the provider has necessary configuration."""
         if self._provider in ("ollama", "local"):
             return bool(self._endpoint)
-        return bool(self._provider and self._api_key and (self._endpoint or self._provider == "openai"))
+        return bool(self._provider and self._api_key and (self._endpoint or self._provider in ("openai", "gemini")))
+
+    def test_connection(self) -> Tuple[bool, str]:
+        """
+        Perform a live lightweight ping test to verify connectivity with the configured provider.
+        Distinguishes missing configuration, invalid credentials, rate limit / quota,
+        network errors, timeouts, and successful connectivity.
+        """
+        provider_label = "Google Gemini" if self._provider == "gemini" else self._provider.capitalize()
+        if not self.is_configured():
+            key_var = f"{self._provider.upper()}_API_KEY"
+            return False, f"{provider_label} provider is unconfigured ({key_var} missing)."
+        try:
+            res = self._execute_provider_call(
+                "You are HELIOX AI health checker. Respond ONLY with valid JSON: {\"status\": \"ok\"}",
+                "ping",
+            )
+            if isinstance(res, dict) and res.get("status") == "ok":
+                self._last_status = f"{self._provider}_configured_and_available"
+                self._last_error = None
+                self._error_category = None
+                return True, f"Connection to {provider_label} ({self._model}) succeeded."
+            return False, f"Unexpected response format received from {provider_label}."
+        except urllib.error.HTTPError as http_err:
+            if http_err.code in (401, 403) or (self._provider == "gemini" and http_err.code == 400):
+                return False, f"Invalid API key or access denied (HTTP {http_err.code}). Please check your {self._provider.upper()}_API_KEY."
+            elif http_err.code == 429:
+                return False, f"{provider_label} API quota or rate limit exceeded (HTTP 429). Please check your account usage/billing."
+            elif http_err.code in (408, 504):
+                return False, f"{provider_label} request timed out (HTTP {http_err.code})."
+            elif http_err.code in (500, 502, 503):
+                return False, f"{provider_label} server error or temporary outage (HTTP {http_err.code})."
+            return False, f"{provider_label} HTTP error: {http_err.code} ({http_err.reason})"
+        except TimeoutError:
+            return False, f"Connection to {provider_label} timed out after {self._timeout_seconds}s."
+        except urllib.error.URLError as url_err:
+            return False, f"Network connection failed: {url_err.reason}"
+        except Exception as exc:
+            return False, f"{provider_label} connection error: {exc}"
 
     def get_status(self) -> Dict[str, Any]:
         """Return safe, non-sensitive provider configuration and availability status."""
         configured = self.is_configured()
         status = self._last_status
-        provider_name = self._provider or "openai"
+        provider_name = self._provider or "gemini"
 
         if not configured:
             status = f"{provider_name}_unconfigured"
@@ -204,12 +262,20 @@ class ConfiguredLLMProvider(BaseLLMProvider):
         elif "timeout" in status:
             status_label = f"{provider_name.upper()} Timeout (Deterministic Fallback Active)"
             fallback_active = True
-        elif "temporarily_unavailable" in status or "error" in status or "failed" in status:
+        elif "temporarily_unavailable" in status or "error" in status or "failed" in status or "malformed" in status:
             status_label = f"{provider_name.capitalize()} Unavailable (Deterministic Fallback Active)"
             fallback_active = True
         else:
             status_label = f"{provider_name.capitalize()} Configured ({self._model})"
             fallback_active = False
+
+        if provider_name == "openai":
+            supported_models = ["gpt-4o-mini", "gpt-4o"]
+        elif provider_name == "gemini":
+            models = [self._model, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+            supported_models = list(dict.fromkeys(m for m in models if m))
+        else:
+            supported_models = [self._model]
 
         return {
             "provider": provider_name,
@@ -223,7 +289,7 @@ class ConfiguredLLMProvider(BaseLLMProvider):
             "status_label": status_label,
             "fallback_active": fallback_active,
             "timeout_seconds": self._timeout_seconds,
-            "supported_models": ["gpt-4o-mini", "gpt-4o"] if provider_name == "openai" else [self._model],
+            "supported_models": supported_models,
             "last_error": self._last_error,
             "error_category": getattr(self, "_error_category", None),
         }
@@ -455,24 +521,30 @@ class ConfiguredLLMProvider(BaseLLMProvider):
                 if "?key=" not in endpoint and self._api_key:
                     endpoint = f"{endpoint}?key={self._api_key}"
                 headers = {"Content-Type": "application/json"}
+                if self._api_key:
+                    headers["x-goog-api-key"] = self._api_key
                 contents = []
                 for m in messages:
+                    role = "model" if m["role"] == "assistant" else "user"
                     contents.append({
-                        "role": "user" if m["role"] in ("user", "system") else "model",
+                        "role": role,
                         "parts": [{"text": m["content"]}],
                     })
-                payload = {"contents": contents}
+                payload = {
+                    "contents": contents,
+                    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 800},
+                }
                 req = urllib.request.Request(
                     endpoint,
                     data=json.dumps(payload).encode("utf-8"),
                     headers=headers,
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=self._timeout_seconds) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    self._last_status = "gemini_configured_and_available"
-                    self._last_error = None
-                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                data = self._execute_http_request(req)
+                self._last_status = f"{self._provider}_configured_and_available"
+                self._last_error = None
+                self._error_category = None
+                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
             elif self._provider == "anthropic":
                 headers = {
@@ -496,11 +568,10 @@ class ConfiguredLLMProvider(BaseLLMProvider):
                     headers=headers,
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=self._timeout_seconds) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    self._last_status = "anthropic_configured_and_available"
-                    self._last_error = None
-                    return data["content"][0]["text"].strip()
+                data = self._execute_http_request(req)
+                self._last_status = "anthropic_configured_and_available"
+                self._last_error = None
+                return data["content"][0]["text"].strip()
 
             else:
                 # OpenAI-compatible
@@ -527,9 +598,10 @@ class ConfiguredLLMProvider(BaseLLMProvider):
                 return str(data["choices"][0]["message"]["content"]).strip()
 
         except urllib.error.HTTPError as http_err:
-            if http_err.code == 401:
+            provider_label = "Google Gemini" if self._provider == "gemini" else self._provider.capitalize()
+            if http_err.code in (401, 403) or (self._provider == "gemini" and http_err.code == 400):
                 self._last_status = f"{self._provider}_authentication_failed"
-                self._last_error = f"{self._provider.upper()} authentication failed: invalid or expired API key (HTTP 401)"
+                self._last_error = f"{self._provider.upper()} authentication failed: invalid or expired API key (HTTP {http_err.code})"
                 self._error_category = "AUTHENTICATION_ERROR"
             elif http_err.code == 429:
                 self._last_status = f"{self._provider}_rate_limited"
@@ -565,9 +637,12 @@ class ConfiguredLLMProvider(BaseLLMProvider):
             if "?key=" not in endpoint and self._api_key:
                 endpoint = f"{endpoint}?key={self._api_key}"
             headers = {"Content-Type": "application/json"}
+            if self._api_key:
+                headers["x-goog-api-key"] = self._api_key
             payload = {
                 "contents": [
                     {
+                        "role": "user",
                         "parts": [
                             {"text": f"{system_prompt}\n\nUser Planning Request:\n{prompt}"}
                         ]
@@ -581,13 +656,6 @@ class ConfiguredLLMProvider(BaseLLMProvider):
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=self._timeout_seconds) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                self._last_status = "gemini_configured_and_available"
-                self._last_error = None
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return json.loads(text)
-
         elif self._provider == "anthropic":
             headers = {
                 "Content-Type": "application/json",
@@ -606,14 +674,6 @@ class ConfiguredLLMProvider(BaseLLMProvider):
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=self._timeout_seconds) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                self._last_status = "anthropic_configured_and_available"
-                self._last_error = None
-                text = data["content"][0]["text"]
-                cleaned_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE)
-                return json.loads(cleaned_text)
-
         else:
             # Standard OpenAI-compatible format (OpenAI, Groq, Ollama, Local HTTP)
             endpoint = self._endpoint or "https://api.openai.com/v1/chat/completions"
@@ -635,75 +695,167 @@ class ConfiguredLLMProvider(BaseLLMProvider):
                 headers=headers,
                 method="POST",
             )
-            try:
-                data = self._execute_http_request(req)
-                self._last_status = f"{self._provider}_configured_and_available"
-                self._last_error = None
-                self._error_category = None
+
+        try:
+            data = self._execute_http_request(req)
+            self._last_status = f"{self._provider}_configured_and_available"
+            self._last_error = None
+            self._error_category = None
+        except urllib.error.HTTPError as http_err:
+            provider_label = "Google Gemini" if self._provider == "gemini" else self._provider.capitalize()
+            if http_err.code in (401, 403) or (self._provider == "gemini" and http_err.code == 400):
+                self._last_status = f"{self._provider}_authentication_failed"
+                self._last_error = f"{provider_label} authentication failed: invalid or expired API key (HTTP {http_err.code})"
+                self._error_category = "AUTHENTICATION_ERROR"
+            elif http_err.code == 429:
+                self._last_status = f"{self._provider}_rate_limited"
+                self._last_error = f"{provider_label} rate limit or quota exceeded (HTTP 429)"
+                self._error_category = "RATE_LIMIT_EXCEEDED"
+            elif http_err.code in (408, 504):
+                self._last_status = f"{self._provider}_timeout"
+                self._last_error = f"{provider_label} request timeout (HTTP {http_err.code})"
+                self._error_category = "TIMEOUT"
+            elif http_err.code in (500, 502, 503):
+                self._last_status = f"{self._provider}_temporarily_unavailable"
+                self._last_error = f"{provider_label} service unavailable or outage (HTTP {http_err.code})"
+                self._error_category = "SERVICE_UNAVAILABLE"
+            else:
+                self._last_status = f"{self._provider}_temporarily_unavailable"
+                self._last_error = f"{provider_label} HTTP error: {http_err.code}"
+                self._error_category = "HTTP_ERROR"
+            logger.warning(
+                "%s call failed via %s [key: %s]: %s; falling back to deterministic parser.",
+                provider_label,
+                self._provider,
+                self._mask_key(self._api_key),
+                self._last_error,
+            )
+            raise
+        except TimeoutError as timeout_err:
+            self._last_status = f"{self._provider}_timeout"
+            self._last_error = f"{self._provider.capitalize()} request timed out: {timeout_err}"
+            self._error_category = "TIMEOUT"
+            logger.warning(
+                "%s timeout via %s [key: %s]: %s; falling back to deterministic parser.",
+                self._provider.capitalize(),
+                self._provider,
+                self._mask_key(self._api_key),
+                self._last_error,
+            )
+            raise
+        except urllib.error.URLError as net_err:
+            self._last_status = f"{self._provider}_network_error"
+            self._last_error = f"{self._provider.capitalize()} network error: {net_err.reason}"
+            self._error_category = "NETWORK_ERROR"
+            logger.warning(
+                "%s network error via %s [key: %s]: %s; falling back to deterministic parser.",
+                self._provider.capitalize(),
+                self._provider,
+                self._mask_key(self._api_key),
+                self._last_error,
+            )
+            raise
+
+        try:
+            if self._provider == "gemini":
+                candidates = data.get("candidates") if isinstance(data, dict) else None
+                if not candidates or not isinstance(candidates, list):
+                    raise KeyError("candidates")
+                candidate = candidates[0]
+                content = candidate.get("content", {})
+                parts = content.get("parts", [])
+                if not parts or not isinstance(parts, list):
+                    raise KeyError("parts")
+                text = parts[0].get("text", "")
+                if not text:
+                    raise ValueError("Empty candidate text from Gemini")
+                cleaned_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE).strip()
+                try:
+                    return json.loads(cleaned_text)
+                except json.JSONDecodeError:
+                    m = re.search(r"(\{.*\})", cleaned_text, re.DOTALL)
+                    if m:
+                        return json.loads(m.group(1))
+                    raise
+            elif self._provider == "anthropic":
+                text = data["content"][0]["text"]
+                cleaned_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE)
+                return json.loads(cleaned_text)
+            else:
                 content = data["choices"][0]["message"]["content"]
                 if isinstance(content, dict):
                     return content
                 return json.loads(content)
-            except urllib.error.HTTPError as http_err:
-                if http_err.code == 401:
-                    self._last_status = "openai_authentication_failed"
-                    self._last_error = "OpenAI authentication failed: invalid or expired API key (HTTP 401)"
-                    self._error_category = "AUTHENTICATION_ERROR"
-                elif http_err.code == 429:
-                    self._last_status = "openai_rate_limited"
-                    self._last_error = "OpenAI rate limit or quota exceeded (HTTP 429)"
-                    self._error_category = "RATE_LIMIT_EXCEEDED"
-                elif http_err.code in (408, 504):
-                    self._last_status = "openai_timeout"
-                    self._last_error = f"OpenAI request timeout (HTTP {http_err.code})"
-                    self._error_category = "TIMEOUT"
-                elif http_err.code in (500, 502, 503):
-                    self._last_status = "openai_temporarily_unavailable"
-                    self._last_error = f"OpenAI service unavailable or outage (HTTP {http_err.code})"
-                    self._error_category = "SERVICE_UNAVAILABLE"
-                else:
-                    self._last_status = "openai_temporarily_unavailable"
-                    self._last_error = f"OpenAI HTTP error: {http_err.code}"
-                    self._error_category = "HTTP_ERROR"
-                logger.warning(
-                    "OpenAI call failed via %s [key: %s]: %s; falling back to deterministic parser.",
-                    self._provider,
-                    self._mask_key(self._api_key),
-                    self._last_error,
-                )
-                raise
-            except TimeoutError as timeout_err:
-                self._last_status = "openai_timeout"
-                self._last_error = f"OpenAI request timed out: {timeout_err}"
-                self._error_category = "TIMEOUT"
-                logger.warning(
-                    "OpenAI timeout via %s [key: %s]: %s; falling back to deterministic parser.",
-                    self._provider,
-                    self._mask_key(self._api_key),
-                    self._last_error,
-                )
-                raise
-            except urllib.error.URLError as net_err:
-                self._last_status = "openai_network_error"
-                self._last_error = f"OpenAI network error: {net_err.reason}"
-                self._error_category = "NETWORK_ERROR"
-                logger.warning(
-                    "OpenAI network error via %s [key: %s]: %s; falling back to deterministic parser.",
-                    self._provider,
-                    self._mask_key(self._api_key),
-                    self._last_error,
-                )
-                raise
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as malformed_err:
-                self._last_status = "openai_malformed_output"
-                self._last_error = f"Malformed payload from {self._provider}: {malformed_err}"
-                self._error_category = "INVALID_PAYLOAD"
-                logger.warning(
-                    "Malformed response from %s: %s; falling back to deterministic parser.",
-                    self._provider,
-                    malformed_err,
-                )
-                raise
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError) as malformed_err:
+            self._last_status = f"{self._provider}_malformed_output"
+            self._last_error = f"Malformed payload from {self._provider}: {malformed_err}"
+            self._error_category = "INVALID_PAYLOAD"
+            logger.warning(
+                "Malformed response from %s: %s; falling back to deterministic parser.",
+                self._provider,
+                malformed_err,
+            )
+            raise
+
+
+class GeminiProvider(ConfiguredLLMProvider):
+    """
+    Dedicated Google Gemini LLM provider integration for HELIOX AI.
+    Conforms to Google Generative Language API with JSON mode structured output.
+    Reads credentials from GEMINI_API_KEY or GOOGLE_API_KEY and model from GEMINI_MODEL.
+    Handles rate limits, auth errors, timeouts, outages, and malformed responses.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> None:
+        raw_key = api_key.strip() if api_key is not None else (
+            os.getenv("GEMINI_API_KEY", "").strip()
+            or os.getenv("GOOGLE_API_KEY", "").strip()
+            or os.getenv("HELIOX_LLM_API_KEY", "").strip()
+        )
+        raw_model = (
+            model
+            or os.getenv("GEMINI_MODEL", "").strip()
+            or os.getenv("HELIOX_LLM_MODEL", "").strip()
+            or "gemini-2.5-flash"
+        )
+        gemini_endpoint = (
+            endpoint
+            or os.getenv("GEMINI_ENDPOINT", "").strip()
+            or os.getenv("HELIOX_LLM_ENDPOINT", "").strip()
+        )
+        if not gemini_endpoint:
+            gemini_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{raw_model}:generateContent"
+
+        gemini_timeout = os.getenv("GEMINI_TIMEOUT", "").strip()
+        if timeout_seconds is not None:
+            effective_timeout = float(timeout_seconds)
+        elif gemini_timeout:
+            try:
+                effective_timeout = float(gemini_timeout)
+            except ValueError:
+                effective_timeout = 10.0
+        elif os.getenv("HELIOX_LLM_TIMEOUT"):
+            try:
+                effective_timeout = float(os.getenv("HELIOX_LLM_TIMEOUT", "10.0"))
+            except ValueError:
+                effective_timeout = 10.0
+        else:
+            effective_timeout = 10.0
+
+        super().__init__(
+            provider="gemini",
+            api_key=raw_key,
+            endpoint=gemini_endpoint,
+            model=raw_model,
+            timeout_seconds=effective_timeout,
+        )
 
 
 class OpenAIProvider(ConfiguredLLMProvider):
@@ -753,41 +905,67 @@ class OpenAIProvider(ConfiguredLLMProvider):
             timeout_seconds=effective_timeout,
         )
 
-    def test_connection(self) -> Tuple[bool, str]:
-        """
-        Perform a live lightweight ping test to verify connectivity with OpenAI.
-        Distinguishes missing configuration, invalid credentials, rate limit / quota,
-        network errors, timeouts, and successful connectivity.
-        """
-        if not self.is_configured():
-            return False, "OpenAI provider is unconfigured (OPENAI_API_KEY missing)."
-        try:
-            res = self._execute_provider_call(
-                "You are HELIOX AI health checker. Respond ONLY with valid JSON: {\"status\": \"ok\"}",
-                "ping",
-            )
-            if isinstance(res, dict) and res.get("status") == "ok":
-                self._last_status = "openai_configured_and_available"
-                self._last_error = None
-                self._error_category = None
-                return True, f"Connection to OpenAI ({self._model}) succeeded."
-            return False, "Unexpected response format received from OpenAI."
-        except urllib.error.HTTPError as http_err:
-            if http_err.code == 401:
-                return False, "Invalid API key (HTTP 401 Unauthorized). Please check your OPENAI_API_KEY."
-            elif http_err.code == 429:
-                return False, "OpenAI API quota or rate limit exceeded (HTTP 429). Please check your OpenAI account billing/usage."
-            elif http_err.code in (408, 504):
-                return False, f"OpenAI request timed out (HTTP {http_err.code})."
-            elif http_err.code in (500, 502, 503):
-                return False, f"OpenAI server error or temporary outage (HTTP {http_err.code})."
-            return False, f"OpenAI HTTP error: {http_err.code} ({http_err.reason})"
-        except TimeoutError:
-            return False, f"Connection to OpenAI timed out after {self._timeout_seconds}s."
-        except urllib.error.URLError as url_err:
-            return False, f"Network connection failed: {url_err.reason}"
-        except Exception as exc:
-            return False, f"OpenAI connection error: {exc}"
+
+def get_llm_provider(
+    provider_name: Optional[str] = None,
+    *,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    timeout_seconds: Optional[float] = None,
+) -> BaseLLMProvider:
+    """
+    Provider factory and selector for HELIOX AI.
+    Selects Google Gemini as the primary default LLM provider.
+    Honors HELIOX_LLM_PROVIDER, explicit provider_name, or falls back to
+    configured providers (Gemini, OpenAI, Ollama, Anthropic, Groq).
+    """
+    raw_provider = (
+        provider_name
+        if provider_name is not None
+        else os.getenv("HELIOX_LLM_PROVIDER", "")
+    ).strip().lower()
+
+    if not raw_provider:
+        # Default primary provider is Gemini
+        raw_provider = "gemini"
+
+    if raw_provider == "gemini":
+        return GeminiProvider(
+            api_key=api_key,
+            model=model,
+            endpoint=endpoint,
+            timeout_seconds=timeout_seconds,
+        )
+    elif raw_provider == "openai":
+        return OpenAIProvider(
+            api_key=api_key,
+            model=model,
+            endpoint=endpoint,
+            timeout_seconds=timeout_seconds,
+        )
+    elif raw_provider in ("ollama", "local", "anthropic", "groq"):
+        return ConfiguredLLMProvider(
+            provider=raw_provider,
+            api_key=api_key,
+            model=model,
+            endpoint=endpoint,
+            timeout_seconds=timeout_seconds,
+        )
+    elif raw_provider in ("deterministic", "fallback"):
+        return DeterministicFallbackProvider()
+    else:
+        return GeminiProvider(
+            api_key=api_key,
+            model=model,
+            endpoint=endpoint,
+            timeout_seconds=timeout_seconds,
+        )
+
+
+def get_default_llm_provider() -> BaseLLMProvider:
+    """Return the selected primary LLM provider instance."""
+    return get_llm_provider()
 
 
 class DeterministicFallbackProvider(BaseLLMProvider):
@@ -863,7 +1041,7 @@ class DeterministicFallbackProvider(BaseLLMProvider):
 class HybridPlanningParser:
     """
     Unified entry point for natural-language planning queries.
-    Uses ConfiguredLLMProvider/OpenAIProvider if configured and valid; falls back gracefully to
+    Uses ConfiguredLLMProvider/GeminiProvider if configured and valid; falls back gracefully to
     DeterministicFallbackProvider without failing or pretending rule-based logic is an LLM.
     """
 
@@ -873,7 +1051,7 @@ class HybridPlanningParser:
         fallback_provider: Optional[BaseLLMProvider] = None,
         clock: Optional[Callable[[], datetime]] = None,
     ) -> None:
-        self.llm_provider = llm_provider or OpenAIProvider()
+        self.llm_provider = llm_provider or get_default_llm_provider()
         self.fallback_provider = fallback_provider or DeterministicFallbackProvider(clock=clock)
         self.clock = clock
 
@@ -956,33 +1134,6 @@ class HybridPlanningParser:
             "Try asking me to plan your day or show your tasks!",
             "deterministic_fallback",
         )
-
-    extract_planning_context = parse
-
-    def parse_refinement(
-        self,
-        command: str,
-        current_schedule: Optional[List[Dict[str, Any]]] = None,
-        existing_schedule: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
-        """Parse conversational plan refinement with LLM or fallback."""
-        schedule = current_schedule or existing_schedule
-        if self.llm_provider and self.llm_provider.is_configured():
-            if hasattr(self.llm_provider, "parse_refinement"):
-                try:
-                    res = self.llm_provider.parse_refinement(
-                        command,
-                        current_schedule=schedule,
-                        existing_schedule=schedule,
-                    )
-                    if res and isinstance(res, dict) and "action" in res:
-                        return res
-                except Exception as e:
-                    logger.warning("LLM refinement extraction error: %s; using deterministic extractor.", e)
-        # Deterministic rule-based extraction
-        from backend.app.interface.nl_extractor import NaturalLanguageExtractor
-        extractor = NaturalLanguageExtractor(clock=self.clock)
-        return extractor.parse_refinement(command, current_schedule=schedule)
 
     def get_provider_status(self) -> Dict[str, Any]:
         """Return provider configuration status safely."""

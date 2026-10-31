@@ -7,7 +7,6 @@ import {
   TaskStartRequest,
   TaskCompleteRequest,
   TaskFeedbackRequest,
-  type MLReadinessReport,
   type AuthUser,
   type ExecutivePlanResponse,
   type Task,
@@ -178,16 +177,64 @@ export function useDatasetReadiness() {
   });
 }
 
+/** Endpoints that answer 404 until the user has completed tasks resolve to null. */
+async function nullOn404<T>(request: () => Promise<T>): Promise<T | null> {
+  try {
+    return await request();
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 export function useBehaviorPatterns(enabled = true) {
   const userId = useUserStore((state) => state.userId);
   return useQuery({
     queryKey: ["behavior", "patterns", userId],
     queryFn: () => {
       if (userId === null) throw new Error("Authenticated user is required.");
-      return api.behavior.patterns(userId);
+      return nullOn404(() => api.behavior.patterns(userId));
     },
     enabled: userId !== null && enabled,
     retry: false,
+  });
+}
+
+export function useRecommendations(daysBack = 90, enabled = true) {
+  const userId = useUserStore((state) => state.userId);
+  return useQuery({
+    queryKey: ["ai", "recommendations", userId, daysBack],
+    queryFn: () => {
+      if (userId === null) throw new Error("Authenticated user is required.");
+      return nullOn404(() => api.ai.recommendations(userId, daysBack));
+    },
+    enabled: userId !== null && enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+export function useAIContext(enabled = true) {
+  const userId = useUserStore((state) => state.userId);
+  return useQuery({
+    queryKey: ["ai", "context", userId],
+    queryFn: () => {
+      if (userId === null) throw new Error("Authenticated user is required.");
+      return nullOn404(() => api.ai.context(userId, 90));
+    },
+    enabled: userId !== null && enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+export function useActivePlan() {
+  const userId = useUserStore((state) => state.userId);
+  return useQuery({
+    queryKey: ["planning", userId, "active"],
+    queryFn: api.ai.activePlan,
+    enabled: userId !== null,
+    staleTime: 10_000,
   });
 }
 
@@ -395,6 +442,9 @@ export function useRejectPlan() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["system", "status"] });
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ["planning", userId] });
+      }
     },
   });
 }
@@ -407,6 +457,9 @@ export function useAICommand() {
       if (data.intent === "create_task" || data.intent === "accept_plan") {
         queryClient.invalidateQueries({ queryKey: ["tasks"] });
       }
+      // Planning intents create or update the persisted plan proposal.
+      queryClient.invalidateQueries({ queryKey: ["planning"] });
+      queryClient.invalidateQueries({ queryKey: ["jam", "conversations"] });
     },
   });
 }

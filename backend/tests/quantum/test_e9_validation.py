@@ -276,7 +276,8 @@ def test_failure_checks_reject_invalid_inputs():
 
 
 def test_architecture_audit_passes_actual_repository():
-    audit = E9QuantumValidationHarness().architecture_audit(Path.cwd())
+    repo_root = Path(__file__).resolve().parents[3]
+    audit = E9QuantumValidationHarness().architecture_audit(repo_root)
     assert audit.passed is True
     assert audit.forbidden_import_findings == ()
     assert audit.anti_cheating_findings == ()
