@@ -457,3 +457,76 @@ def test_provider_test_connection_ping():
         assert success is True
         assert "Google Gemini" in message
         assert provider.get_status()["status"] == "gemini_configured_and_available"
+
+
+def test_provider_status_public_endpoint_security():
+    """Ensure GET /api/v1/ai/provider-status does not expose credentials, endpoint, timeout, or raw provider settings."""
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    client = TestClient(app)
+    response = client.get("/api/v1/ai/provider-status")
+    assert response.status_code == 200
+
+    data = response.json()
+    # Safe public allowlist fields
+    assert "provider" in data
+    assert "model" in data
+    assert "display_model" in data
+    assert "is_configured" in data
+    assert "status" in data
+    assert "status_label" in data
+    assert "fallback_active" in data
+
+    # Verify display model is clean and friendly
+    assert data["display_model"] == "Gemini 3.8 Flash"
+
+    # STRICT SECURITY ASSERTIONS: Sensitive fields must NEVER be present
+    forbidden_keys = [
+        "has_api_key",
+        "masked_key",
+        "endpoint",
+        "timeout_seconds",
+        "supported_models",
+        "api_key",
+        "key",
+        "secret",
+        "token",
+        "last_error",
+        "error_category",
+    ]
+    for forbidden in forbidden_keys:
+        assert forbidden not in data, f"Sensitive field '{forbidden}' exposed in public provider status response!"
+
+    # Ensure no secret strings or URLs in the entire response body
+    raw_text = response.text
+    assert "AIzaSy" not in raw_text
+    assert "sk-" not in raw_text
+    assert "https://" not in raw_text
+
+
+def test_provider_test_connection_endpoint_security():
+    """Ensure POST /api/v1/ai/provider-test sanitizes output and leaks no credentials or internal URLs."""
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    client = TestClient(app)
+    response = client.post("/api/v1/ai/provider-test")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "success" in data
+    assert "message" in data
+    assert "status" in data
+
+    # Ensure last_error and error_category are not leaking raw exception details
+    assert data.get("last_error") is None
+    assert data.get("error_category") is None
+
+    # Message must not contain secret keys or raw env variable names
+    message = data["message"]
+    assert "AIzaSy" not in message
+    assert "sk-" not in message
+    assert "GEMINI_API_KEY" not in message
+    assert "OPENAI_API_KEY" not in message
+    assert "https://" not in message

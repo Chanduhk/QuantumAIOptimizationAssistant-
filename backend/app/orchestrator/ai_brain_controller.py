@@ -579,6 +579,20 @@ class AIBrainController:
         extracted_tasks_raw = request.parameters.get("extracted_tasks") or []
         explicit_tasks: List[Dict[str, Any]] = []
 
+        def _parse_task_deps(raw: Any) -> list[int]:
+            if not raw:
+                return []
+            if isinstance(raw, list):
+                return [int(x) for x in raw if str(x).isdigit()]
+            try:
+                import json
+                loaded = json.loads(str(raw))
+                if isinstance(loaded, list):
+                    return [int(x) for x in loaded if str(x).isdigit()]
+            except Exception:
+                pass
+            return []
+
         if use_existing or (not extracted_tasks_raw and active_user_tasks):
             active_user_tasks.sort(key=lambda t: t.priority, reverse=True)
             if task_count and task_count > 0:
@@ -588,6 +602,7 @@ class AIBrainController:
                 {
                     "id": t.id,
                     "title": t.title,
+                    "description": t.description,
                     "task_type": t.task_type,
                     "priority": t.priority,
                     "estimated_duration": (t.estimated_duration / 60.0) if (t.estimated_duration_unit == "minutes" and t.estimated_duration) else (t.estimated_duration or 1.0),
@@ -595,8 +610,11 @@ class AIBrainController:
                     "estimated_duration_source": t.estimated_duration_source or "existing_database",
                     "completed": False,
                     "origin": "existing",
-                    "deadline": None,
-                    "dependencies": [],
+                    "deadline": t.deadline.isoformat() if t.deadline else None,
+                    "deadline_dt": t.deadline,
+                    "dependencies": _parse_task_deps(t.dependencies),
+                    "goal_id": t.goal_id,
+                    "context_info": t.context_info,
                 }
                 for t in active_user_tasks
             ]
@@ -616,6 +634,12 @@ class AIBrainController:
                     dur = ext.get("estimated_duration") or (matched_db_task.estimated_duration / 60.0 if matched_db_task.estimated_duration else 1.0)
                     dur_src = ext.get("estimated_duration_source") or matched_db_task.estimated_duration_source or "existing_database"
                     ttype = matched_db_task.task_type
+                    d_iso = ext.get("deadline") or (matched_db_task.deadline.isoformat() if matched_db_task.deadline else None)
+                    d_dt = ext.get("deadline_dt") or matched_db_task.deadline
+                    deps = ext.get("dependencies") or _parse_task_deps(matched_db_task.dependencies)
+                    gid = ext.get("goal_id") or matched_db_task.goal_id
+                    desc = ext.get("description") or matched_db_task.description
+                    ctx = ext.get("context_info") or matched_db_task.context_info
                 else:
                     slug = re.sub(r"[^a-zA-Z0-9_]", "_", ext_title.lower())[:24]
                     tid = str(ext.get("id") or f"proposed:{slug}_{idx}")
@@ -624,10 +648,17 @@ class AIBrainController:
                     dur = ext.get("estimated_duration", 1.0)
                     dur_src = ext.get("estimated_duration_source", "conversational_input")
                     ttype = ext.get("task_type", "general")
+                    d_iso = ext.get("deadline")
+                    d_dt = ext.get("deadline_dt")
+                    deps = ext.get("dependencies") or []
+                    gid = ext.get("goal_id")
+                    desc = ext.get("description")
+                    ctx = ext.get("context_info")
 
                 explicit_tasks.append({
                     "id": tid,
                     "title": ext_title or f"Task {idx}",
+                    "description": desc,
                     "task_type": ttype,
                     "priority": int(prio),
                     "estimated_duration": float(dur),
@@ -635,14 +666,41 @@ class AIBrainController:
                     "estimated_duration_source": dur_src,
                     "completed": False,
                     "origin": origin,
-                    "deadline": ext.get("deadline"),
+                    "deadline": d_iso,
                     "deadline_expression": ext.get("deadline_expression"),
-                    "deadline_dt": ext.get("deadline_dt"),
+                    "deadline_dt": d_dt,
                     "deadline_precision": ext.get("deadline_precision"),
-                    "dependencies": ext.get("dependencies") or [],
+                    "dependencies": deps,
+                    "goal_id": gid,
+                    "context_info": ctx,
                     "scheduling_preference": ext.get("scheduling_preference"),
                     "min_start_hour": ext.get("min_start_hour"),
                 })
+
+        # Resolve string dependency references by title
+        task_id_by_title: Dict[str, Any] = {}
+        for t in explicit_tasks:
+            t_title = str(t.get("title", "")).strip().lower()
+            if t_title:
+                task_id_by_title[t_title] = t["id"]
+
+        for t in explicit_tasks:
+            resolved_deps = []
+            for dep in t.get("dependencies") or []:
+                if isinstance(dep, int) or (isinstance(dep, str) and dep.isdigit()):
+                    resolved_deps.append(int(dep))
+                elif isinstance(dep, str):
+                    d_clean = dep.strip().lower()
+                    if d_clean in task_id_by_title:
+                        resolved_deps.append(task_id_by_title[d_clean])
+                    else:
+                        for tk, tv in task_id_by_title.items():
+                            if d_clean in tk or tk in d_clean:
+                                resolved_deps.append(tv)
+                                break
+                        else:
+                            resolved_deps.append(dep)
+            t["dependencies"] = resolved_deps
 
         if not explicit_tasks and request.parameters.get("clarification_needed"):
             trace.completed_at = time.time()
@@ -697,6 +755,34 @@ class AIBrainController:
             )
         except Exception as e:
             intel_context.behavioral_insights = BehavioralInsights(available=False, error=str(e))
+
+        # 3. Goal Alignment
+        try:
+            from backend.app.services.goal_service import GoalService
+            goal_service = GoalService(self.session)
+            user_goals = goal_service.list_goals(user_id=user_id)
+            active_goals = [g for g in user_goals if g.status == "active"]
+            alignment_score = min(1.0, len(active_goals) / 5.0) if active_goals else 0.0
+            intel_context.goal_alignment = GoalAlignment(
+                available=True,
+                active_goals=len(active_goals),
+                alignment_score=alignment_score,
+            )
+        except Exception as e:
+            intel_context.goal_alignment = GoalAlignment(available=False, error=str(e))
+
+        # 4. Dependency Graph
+        try:
+            total_nodes = len(explicit_tasks)
+            total_edges = sum(len(t.get("dependencies") or []) for t in explicit_tasks)
+            intel_context.dependency_graph = DependencyGraph(
+                available=True,
+                nodes=total_nodes,
+                edges=total_edges,
+                critical_path=[],
+            )
+        except Exception as e:
+            intel_context.dependency_graph = DependencyGraph(available=False, error=str(e))
 
         et_intel = time.time()
         trace.stages.append(StageTrace(

@@ -17,18 +17,19 @@ export function providerState(provider: ProviderStatusResponse | undefined | nul
   if (!provider) return { short: "Checking parser…", detail: "", tone: "neutral", live: false };
   const known: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", groq: "Groq", ollama: "Ollama" };
   const name = known[provider.provider?.toLowerCase()] ?? (provider.provider ? provider.provider.charAt(0).toUpperCase() + provider.provider.slice(1) : "LLM");
+  const modelName = provider.display_model || provider.model || "Gemini 3.8 Flash";
   if (provider.status?.endsWith("_configured_and_available")) {
-    return { short: `${name} live`, detail: `${provider.model} verified and answering requests.`, tone: "success", live: true };
+    return { short: `${name} live`, detail: `${modelName} verified and answering requests.`, tone: "success", live: true };
   }
   if (!provider.is_configured) {
-    return { short: "Rule-based parser", detail: "No LLM key configured. JAM uses its deterministic planning parser.", tone: "neutral", live: false };
+    return { short: "Rule-based parser", detail: "No LLM configured. JAM uses its deterministic planning parser.", tone: "neutral", live: false };
   }
   if (provider.fallback_active) {
     return { short: `${name} fallback`, detail: `${provider.status_label}. Requests use the deterministic parser.`, tone: "warning", live: false };
   }
   return {
     short: `${name} key set`,
-    detail: `${provider.model} is configured but has not been verified live in this session. Requests fall back to the deterministic parser if the call fails.`,
+    detail: `${modelName} is configured but has not been verified live in this session. Requests fall back to the deterministic parser if the call fails.`,
     tone: "quantum",
     live: false,
   };

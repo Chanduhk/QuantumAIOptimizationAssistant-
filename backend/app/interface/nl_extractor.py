@@ -24,6 +24,8 @@ class ExtractedTaskSpec:
     min_start_hour: Optional[float] = None
     raw_clause: str = ""
     origin: str = "proposed"
+    goal_title: Optional[str] = None
+    description: Optional[str] = None
 
 
 @dataclass
@@ -272,7 +274,13 @@ class NaturalLanguageExtractor:
         cleaned = re.sub(r"^(?:i have|i've got|there is|there are)\s+", "", text, flags=re.IGNORECASE).strip()
 
         # Split on coordinating conjunctions, semicolons, newlines, or sentence breaks (e.g. "with high priority. Then write...")
-        parts = re.split(r",\s*(?:and\s+)?|\s+and\s+|;\s*|\n+|\.\s+(?:then\s+|also\s+|next\s+|after\s+that\s+)?|\.\s+(?=[A-Z])", cleaned, flags=re.IGNORECASE)
+        # Negative lookahead on commas avoids splitting modifier phrases like ", estimate 3 hours, high priority"
+        modifiers = (
+            r"estimate|takes?|lasting|duration|\d+\s*(?:hours?|hrs?|mins?|minutes?)"
+            r"|(?:high|low|medium|critical|urgent|top)\s+priority|priority\s*\d+|urgent|critical"
+            r"|contributes\s+to|part\s+of|towards|due|by\s+\w+|after\s+\w+|depends\s+on"
+        )
+        parts = re.split(rf",(?!\s*(?:{modifiers})\b)\s*(?:and\s+)?|\s+and\s+|;\s*|\n+|\.\s+(?:then\s+|also\s+|next\s+|after\s+that\s+)?|\.\s+(?=[A-Z])", cleaned, flags=re.IGNORECASE)
         clauses = []
         for part in parts:
             p = part.strip(" ,;.")
@@ -313,6 +321,12 @@ class NaturalLanguageExtractor:
         # 5. Dependencies (e.g. after the assignment, depends on exam)
         dependencies = self._extract_dependencies(raw_clause)
 
+        # 5b. Goal association (e.g. contributes to Graduation goal)
+        goal_title = None
+        goal_match = re.search(r"(?:contributes to|part of|towards|for)\s+(?:the\s+)?([a-zA-Z0-9_\-\s]+?)\s+goal\b", raw_clause, re.IGNORECASE)
+        if goal_match:
+            goal_title = goal_match.group(1).strip()
+
         # 6. Extract clean Title
         title = self._clean_title(raw_clause, deadline_expr)
         if not title:
@@ -336,6 +350,7 @@ class NaturalLanguageExtractor:
             min_start_hour=min_hour,
             raw_clause=raw_clause,
             origin="proposed",
+            goal_title=goal_title,
         )
 
     def parse_deadline(self, text: str, ref_dt: datetime) -> Tuple[Optional[str], Optional[datetime], Optional[str]]:
@@ -408,6 +423,36 @@ class NaturalLanguageExtractor:
                 cand = datetime(y + 1, m, d, 17, 0, 0)
             return month_match.group(0), cand, "calendar_date"
 
+        # Weekdays: e.g. "due Friday", "by Friday", "on Wednesday", "next Monday"
+        weekdays = {
+            "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+            "friday": 4, "saturday": 5, "sunday": 6
+        }
+        weekday_pattern = "|".join(weekdays.keys())
+        w_match = re.search(
+            rf"\b(?:due\s+|by\s+|on\s+)?(?:(next)\s+)?({weekday_pattern})(?:\s+(morning|afternoon|evening))?\b",
+            lowered,
+        )
+        if w_match:
+            is_next = bool(w_match.group(1))
+            w_name = w_match.group(2)
+            time_of_day = w_match.group(3)
+            target_weekday = weekdays[w_name]
+            current_weekday = ref_dt.weekday()
+            days_ahead = (target_weekday - current_weekday) % 7
+            if days_ahead == 0 or is_next:
+                days_ahead += 7
+            target = ref_dt + timedelta(days=days_ahead)
+            hour = 17
+            if time_of_day == "morning":
+                hour = 12
+            elif time_of_day == "afternoon":
+                hour = 17
+            elif time_of_day == "evening":
+                hour = 20
+            clean_expr = w_match.group(0).strip()
+            return clean_expr, target.replace(hour=hour, minute=0, second=0, microsecond=0), "weekday"
+
         # Time of day: "by 5pm", "by 17:00", "by 5:00 pm"
         time_match = re.search(r"\bby\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", lowered)
         if time_match:
@@ -427,7 +472,7 @@ class NaturalLanguageExtractor:
         """Extract duration in hours."""
         lowered = text.lower()
         match = re.search(
-            r"(?:duration\s+of|for|lasting|takes?)\s+(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?)\b|"
+            r"(?:duration\s+of|for|lasting|takes?|estimate|approx(?:imately)?|around)?\s*(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?)\b|"
             r"\((\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?)\)",
             lowered,
         )
@@ -492,10 +537,13 @@ class NaturalLanguageExtractor:
         """Clean clause text into a concise, professional task title."""
         title = clause.strip()
 
-        # Remove leading articles, pronouns, and transitions
-        title = re.sub(r"^(?:an?\s+|the\s+|my\s+|to\s+|then\s+|also\s+|next\s+|after\s+that\s+)", "", title, flags=re.IGNORECASE).strip()
+        # Remove leading articles, pronouns, transitions, and action verbs
+        title = re.sub(r"^(?:an?\s+|the\s+|my\s+|to\s+|then\s+|also\s+|next\s+|finally\s+|after\s+that\s+|complete\s+(?:my\s+|the\s+)?|finish\s+(?:my\s+|the\s+)?|work\s+on\s+(?:my\s+|the\s+)?)", "", title, flags=re.IGNORECASE).strip()
         # Remove dependency suffix e.g. "after literature review"
         title = re.sub(r"\b(?:after|following|depends on)\s+(?:the\s+)?[a-zA-Z0-9_\-\s]+$", "", title, flags=re.IGNORECASE).strip()
+
+        # Remove goal phrase e.g. "contributes to Graduation goal"
+        title = re.sub(r"(?:contributes\s+to|part\s+of|towards|for)\s+(?:the\s+)?[a-zA-Z0-9_\-\s]+?\s+goal\b", "", title, flags=re.IGNORECASE).strip()
 
         # Remove deadline phrases and relative day remnants
         if deadline_expr:
@@ -505,11 +553,11 @@ class NaturalLanguageExtractor:
         title = re.sub(r"\b(?:next week|tomorrow|today|tonight)\b.*$", "", title, flags=re.IGNORECASE).strip()
 
         # Remove duration phrases
-        title = re.sub(r"(?:for|lasting|takes?)\s+\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?)\b", "", title, flags=re.IGNORECASE).strip()
+        title = re.sub(r"(?:duration\s+of|for|lasting|takes?|estimate|approx(?:imately)?|around)?\s*\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?)\b", "", title, flags=re.IGNORECASE).strip()
         title = re.sub(r"\(\s*\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?|mins?)\s*\)", "", title, flags=re.IGNORECASE).strip()
 
         # Remove priority phrases
-        title = re.sub(r"\b(?:priority\s+\d+|high priority|urgent|critical|low priority)\b", "", title, flags=re.IGNORECASE).strip()
+        title = re.sub(r"\b(?:priority\s+\d+|(?:high|low|medium|critical|urgent|top)\s+priority|urgent|critical|low priority)\b", "", title, flags=re.IGNORECASE).strip()
 
         # Remove preferences
         title = re.sub(r"\b(?:after lunch|in the morning|in the afternoon)\b", "", title, flags=re.IGNORECASE).strip()

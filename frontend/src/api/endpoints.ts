@@ -193,10 +193,10 @@ export interface Task {
   id: number;
   user_id: number;
   title: string;
+  description?: string | null;
   task_type: string;
   priority: number;
   estimated_duration: number | null;
-  // Existing database rows may contain null or an unrecognized legacy value.
   estimated_duration_unit?: string | null;
   estimated_duration_source?: string | null;
   actual_duration: number | null;
@@ -211,16 +211,88 @@ export interface Task {
   productivity_rating?: number | null;
   feedback_notes?: string | null;
   feedback_submitted_at?: string | null;
+  deadline?: string | null;
+  dependencies?: number[] | string[] | null;
+  goal_id?: number | null;
+  context_info?: string | null;
 }
 
 export interface TaskCreateRequest {
   user_id: number;
   title: string;
+  description?: string;
   task_type: string;
   priority?: number; // Backend defaults to 3
   estimated_duration: number;
-  estimated_duration_unit?: 'minutes';
+  estimated_duration_unit?: 'minutes' | 'hours';
+  deadline?: string;
+  dependencies?: number[];
+  goal_id?: number;
+  context_info?: string;
   created_at?: string;
+}
+
+export interface TaskUpdateRequest {
+  user_id: number;
+  title?: string;
+  description?: string;
+  task_type?: string;
+  priority?: number;
+  estimated_duration?: number;
+  estimated_duration_unit?: 'minutes' | 'hours';
+  deadline?: string;
+  dependencies?: number[];
+  goal_id?: number;
+  context_info?: string;
+  clear_deadline?: boolean;
+  clear_goal?: boolean;
+  clear_dependencies?: boolean;
+}
+
+export interface Goal {
+  id: number;
+  user_id: number;
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  priority: number;
+  target_date?: string | null;
+  status: string;
+  progress: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  task_count?: number;
+}
+
+export interface GoalCreateRequest {
+  user_id: number;
+  title: string;
+  description?: string;
+  category?: string;
+  priority?: number;
+  target_date?: string;
+  status?: string;
+  progress?: number;
+}
+
+export interface GoalUpdateRequest {
+  user_id: number;
+  title?: string;
+  description?: string;
+  category?: string;
+  priority?: number;
+  target_date?: string;
+  status?: string;
+  progress?: number;
+  clear_target_date?: boolean;
+}
+
+export interface GoalListResponse {
+  goals: Goal[];
+}
+
+export interface GoalResponse {
+  goal: Goal;
 }
 
 export interface TaskStartRequest {
@@ -284,15 +356,16 @@ export interface TaskResponse {
 export interface ProviderStatusResponse {
   provider: string;
   model: string;
+  display_model?: string;
   is_configured: boolean;
-  has_api_key: boolean;
-  masked_key: string;
-  endpoint: string;
   status: string;
   status_label: string;
   fallback_active: boolean;
-  timeout_seconds: number;
-  supported_models: string[];
+  has_api_key?: boolean;
+  masked_key?: string;
+  endpoint?: string;
+  timeout_seconds?: number;
+  supported_models?: string[];
   last_error?: string | null;
   error_category?: string | null;
 }
@@ -331,13 +404,19 @@ export interface ConversationDetail {
 }
 
 export interface OrchestratorTaskInput {
-  id?: number;
+  id?: number | string;
   title: string;
+  description?: string;
   type: string;
   priority: number;
   duration: number;
-  estimated_duration_unit?: 'minutes';
+  estimated_duration_unit?: 'minutes' | 'hours';
   estimated_duration_source?: string;
+  deadline?: string;
+  dependencies?: string[] | number[];
+  depends_on_task_ids?: string[];
+  goal_id?: number;
+  context_info?: string;
 }
 
 export interface ExecutivePlanRequest {
@@ -489,6 +568,22 @@ export const api = {
       apiClient.post<MultiEngineResponse>(`/api/v1/tasks/${taskId}/complete`, data).then(res => res.data),
     feedback: (taskId: number, data: TaskFeedbackRequest) =>
       apiClient.post<MultiEngineResponse>(`/api/v1/tasks/${taskId}/feedback`, data).then(res => res.data),
+    update: (taskId: number, data: TaskUpdateRequest) =>
+      apiClient.put<MultiEngineResponse>(`/api/v1/tasks/${taskId}`, data).then(res => res.data),
+    delete: (taskId: number, userId: number) =>
+      apiClient.delete<MultiEngineResponse>(`/api/v1/tasks/${taskId}`, { params: { user_id: userId } }).then(res => res.data),
+  },
+  goals: {
+    list: (userId: number, status?: string) =>
+      apiClient.get<GoalListResponse>("/api/v1/goals", { params: { user_id: userId, status } }).then(res => res.data),
+    get: (goalId: number, userId: number) =>
+      apiClient.get<GoalResponse>(`/api/v1/goals/${goalId}`, { params: { user_id: userId } }).then(res => res.data),
+    create: (data: GoalCreateRequest) =>
+      apiClient.post<GoalResponse>("/api/v1/goals", data).then(res => res.data),
+    update: (goalId: number, data: GoalUpdateRequest) =>
+      apiClient.put<GoalResponse>(`/api/v1/goals/${goalId}`, data).then(res => res.data),
+    delete: (goalId: number, userId: number) =>
+      apiClient.delete<MultiEngineResponse>(`/api/v1/goals/${goalId}`, { params: { user_id: userId } }).then(res => res.data),
   },
   ai: {
     recommendations: (userId: number, daysBack = 90) =>

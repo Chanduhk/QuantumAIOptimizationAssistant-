@@ -17,6 +17,8 @@ vi.mock("@/api/hooks", async (importOriginal) => {
     useCompleteTask: () => ({ mutate: completeTask, isPending: false, reset: vi.fn() }),
     useSubmitTaskFeedback: () => ({ mutate: submitFeedback, isPending: false }),
     useCreateTask: () => ({ mutate: createTask, isPending: false, reset: vi.fn() }),
+    useGoals: () => ({ data: { goals: [] }, isLoading: false }),
+    useTasks: () => ({ data: { tasks: [] }, isLoading: false }),
   };
 });
 

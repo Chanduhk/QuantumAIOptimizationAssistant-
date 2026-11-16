@@ -332,6 +332,15 @@ export function normalizeErrorMessage(error: unknown, fallback = "An unexpected 
   }
   const lower = rawMessage.toLowerCase();
 
+  if (lower.includes("depends_on") || lower.includes("depend") || lower.includes("prerequisite") || lower.includes("cycle")) {
+    return {
+      title: "Task Dependency Issue",
+      explanation: rawMessage || "A selected task contains an invalid, missing, or circular dependency.",
+      actionSuggestion: "Review your task prerequisites in Tasks and try running the pipeline again.",
+      isRetryable: true,
+    };
+  }
+
   if (lower.includes("no completed tasks") || lower.includes("insufficient completed history")) {
     return {
       title: "Completed Task History Needed",

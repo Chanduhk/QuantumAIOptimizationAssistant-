@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from backend.app.domain.context_awareness_model import (
@@ -44,7 +44,7 @@ class ContextAwarenessEngine:
         behavior_learning_summary = self._dict({} if behavior_learning_summary is None else behavior_learning_summary, "behavior_learning_summary")
         adaptive_life_summary = self._dict({} if adaptive_life_summary is None else adaptive_life_summary, "adaptive_life_summary")
         meta_cognitive_summary = self._dict({} if meta_cognitive_summary is None else meta_cognitive_summary, "meta_cognitive_summary")
-        timestamp = timestamp or datetime.utcnow()
+        timestamp = timestamp or datetime.now(timezone.utc)
         focus_score = self._focus_score(current_context, behavior_learning_summary)
         workload_ratio = self._workload_ratio(workload, adaptive_life_summary)
         goal_score = self._goal_score(goals)

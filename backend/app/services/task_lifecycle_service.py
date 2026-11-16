@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import threading
 from datetime import datetime, timezone
@@ -56,16 +57,32 @@ class TaskLifecycleService:
         estimated_duration: float,
         estimated_duration_unit: str = "minutes",
         estimated_duration_source: str = "task_api",
+        description: str | None = None,
+        deadline: datetime | None = None,
+        dependencies: list[Any] | None = None,
+        goal_id: int | None = None,
+        context_info: str | None = None,
         created_at: datetime | None = None,
     ) -> Task:
-        """Create a task with prediction-time fields only."""
+        """Create a task with prediction-time fields and optional goal/deadline/dependency relationships."""
 
+        uid = self._positive_int(user_id, "user_id")
         timestamp = self._timestamp(created_at, "created_at")
+
+        validated_deadline = self._deadline(deadline)
+        validated_goal_id = self._validate_goal(goal_id, uid)
+        validated_deps_json = self._validate_dependencies(dependencies, current_task_id=None, user_id=uid)
+
         task = Task(
-            user_id=self._positive_int(user_id, "user_id"),
+            user_id=uid,
             title=self._safe_text(title, "title"),
+            description=str(description).strip() if description is not None else None,
             task_type=self._safe_text(task_type, "task_type"),
             priority=self._priority(priority),
+            deadline=validated_deadline,
+            dependencies=validated_deps_json,
+            goal_id=validated_goal_id,
+            context_info=str(context_info).strip() if context_info is not None else None,
             estimated_duration=self._positive_float(estimated_duration, "estimated_duration"),
             estimated_duration_unit=self._duration_unit(estimated_duration_unit),
             estimated_duration_source=self._safe_text(estimated_duration_source, "estimated_duration_source"),
@@ -81,6 +98,80 @@ class TaskLifecycleService:
         self.session.commit()
         self.session.refresh(task)
         return task
+
+    def update_task(
+        self,
+        *,
+        task_id: int,
+        user_id: int,
+        title: str | None = None,
+        description: str | None = None,
+        task_type: str | None = None,
+        priority: int | None = None,
+        estimated_duration: float | None = None,
+        estimated_duration_unit: str | None = None,
+        deadline: datetime | None = None,
+        dependencies: list[Any] | None = None,
+        goal_id: int | None = None,
+        context_info: str | None = None,
+        clear_deadline: bool = False,
+        clear_goal: bool = False,
+        clear_dependencies: bool = False,
+    ) -> Task:
+        """Update fields on an existing task with user isolation and dependency cycle checks."""
+        task = self._get_task(task_id=task_id, user_id=user_id)
+
+        if title is not None:
+            task.title = self._safe_text(title, "title")
+        if description is not None:
+            task.description = str(description).strip()
+        if task_type is not None:
+            task.task_type = self._safe_text(task_type, "task_type")
+        if priority is not None:
+            task.priority = self._priority(priority)
+        if estimated_duration is not None:
+            task.estimated_duration = self._positive_float(estimated_duration, "estimated_duration")
+        if estimated_duration_unit is not None:
+            task.estimated_duration_unit = self._duration_unit(estimated_duration_unit)
+
+        if clear_deadline:
+            task.deadline = None
+        elif deadline is not None:
+            task.deadline = self._deadline(deadline)
+
+        if clear_goal:
+            task.goal_id = None
+        elif goal_id is not None:
+            task.goal_id = self._validate_goal(goal_id, user_id)
+
+        if clear_dependencies:
+            task.dependencies = None
+        elif dependencies is not None:
+            task.dependencies = self._validate_dependencies(dependencies, current_task_id=task.id, user_id=user_id)
+
+        if context_info is not None:
+            task.context_info = str(context_info).strip()
+
+        self.session.commit()
+        self.session.refresh(task)
+        return task
+
+    def delete_task(self, *, task_id: int, user_id: int) -> bool:
+        """Delete a task and remove references to it from other tasks' dependencies."""
+        task = self._get_task(task_id=task_id, user_id=user_id)
+        tid = task.id
+
+        # Clean references in other tasks
+        other_tasks = self.session.query(Task).filter(Task.user_id == user_id, Task.id != tid).all()
+        for other in other_tasks:
+            deps = self._parse_dependencies(other.dependencies)
+            if tid in deps:
+                remaining = [d for d in deps if d != tid]
+                other.dependencies = json.dumps(remaining) if remaining else None
+
+        self.session.delete(task)
+        self.session.commit()
+        return True
 
     def start_task(self, *, task_id: int, user_id: int | None = None, started_at: datetime | None = None) -> Task:
         """Mark a created task as started while preserving prediction-time chronology."""
@@ -216,12 +307,22 @@ class TaskLifecycleService:
         elif not effective_lifecycle_state:
             effective_lifecycle_state = TASK_STATE_CREATED
 
+        parsed_deps = self._parse_dependencies(task.dependencies)
+        deadline_str = None
+        if task.deadline is not None:
+            deadline_str = task.deadline.isoformat() if task.deadline.tzinfo else task.deadline.replace(tzinfo=timezone.utc).isoformat()
+
         return {
             "id": task.id,
             "user_id": task.user_id,
             "title": task.title,
+            "description": task.description or "",
             "task_type": task.task_type,
             "priority": task.priority,
+            "deadline": deadline_str,
+            "dependencies": parsed_deps,
+            "goal_id": task.goal_id,
+            "context_info": task.context_info or "",
             "estimated_duration": task.estimated_duration,
             "estimated_duration_unit": task.estimated_duration_unit,
             "estimated_duration_source": task.estimated_duration_source,
@@ -256,6 +357,121 @@ class TaskLifecycleService:
             timestamp = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
         return timestamp
 
+    def _deadline(self, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if not isinstance(value, datetime):
+            raise ValueError("deadline must be a datetime.")
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    def _validate_goal(self, goal_id: int | None, user_id: int) -> int | None:
+        if goal_id is None:
+            return None
+        from backend.app.models.goal import Goal
+        gid = self._positive_int(goal_id, "goal_id")
+        goal = self.session.query(Goal).filter(Goal.id == gid, Goal.user_id == user_id).one_or_none()
+        if goal is None:
+            raise ValueError(f"Goal with id {gid} not found or unauthorized.")
+        return goal.id
+
+    @staticmethod
+    def _parse_dependencies(raw: Any) -> list[int]:
+        if not raw:
+            return []
+        if isinstance(raw, list):
+            res = []
+            for item in raw:
+                try:
+                    res.append(int(item))
+                except (ValueError, TypeError):
+                    pass
+            return sorted(list(set(res)))
+        if isinstance(raw, str):
+            raw_str = raw.strip()
+            if not raw_str:
+                return []
+            try:
+                parsed = json.loads(raw_str)
+                if isinstance(parsed, list):
+                    return sorted(list(set(int(x) for x in parsed if str(x).isdigit() or isinstance(x, (int, float)))))
+            except Exception:
+                pass
+            res = []
+            for part in raw_str.split(","):
+                part = part.strip()
+                if part.isdigit():
+                    res.append(int(part))
+            return sorted(list(set(res)))
+        return []
+
+    def _validate_dependencies(
+        self,
+        dep_input: list[Any] | None,
+        *,
+        current_task_id: int | None,
+        user_id: int,
+    ) -> str | None:
+        if not dep_input:
+            return None
+        dep_ids = self._parse_dependencies(dep_input)
+        if not dep_ids:
+            return None
+
+        clean_ids: set[int] = set()
+        for did in dep_ids:
+            if did <= 0:
+                raise ValueError("Dependency task IDs must be positive integers.")
+            if current_task_id is not None and did == current_task_id:
+                raise ValueError("A task cannot depend on itself.")
+            clean_ids.add(did)
+
+        # Check all prerequisite tasks exist and belong to the same user
+        existing_tasks = self.session.query(Task).filter(Task.id.in_(clean_ids), Task.user_id == user_id).all()
+        found_ids = {t.id for t in existing_tasks}
+        missing = clean_ids - found_ids
+        if missing:
+            raise ValueError(f"Prerequisite tasks not found or unauthorized: {sorted(missing)}.")
+
+        # Cycle detection
+        from backend.app.knowledge.dependency_graph import DependencyGraph
+        from backend.app.domain.dependency_model import TaskDependency
+        graph = DependencyGraph()
+
+        all_user_tasks = self.session.query(Task).filter(Task.user_id == user_id).all()
+        for t in all_user_tasks:
+            graph.tasks.add(str(t.id))
+            if current_task_id is not None and t.id == current_task_id:
+                continue
+            for existing_dep in self._parse_dependencies(t.dependencies):
+                graph.add_dependency(
+                    TaskDependency(
+                        dependency_id=f"db:{t.id}:{existing_dep}",
+                        task_id=str(t.id),
+                        depends_on_task_id=str(existing_dep),
+                        dependency_type="hard",
+                    )
+                )
+
+        task_ref = str(current_task_id) if current_task_id is not None else "candidate_new_task"
+        graph.tasks.add(task_ref)
+        for did in clean_ids:
+            graph.add_dependency(
+                TaskDependency(
+                    dependency_id=f"candidate:{task_ref}:{did}",
+                    task_id=task_ref,
+                    depends_on_task_id=str(did),
+                    dependency_type="hard",
+                )
+            )
+
+        cycles = graph.detect_cycles()
+        if cycles:
+            raise ValueError(f"Dependency cycle detected involving tasks: {cycles[0]}.")
+
+        return json.dumps(sorted(list(clean_ids)))
+
     def _created_at(self, task: Task) -> datetime:
         if task.created_at is not None:
             return task.created_at
@@ -268,7 +484,7 @@ class TaskLifecycleService:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{field_name} must be a non-empty string.")
         text_value = value.strip()
-        if any(ord(char) < 32 for char in text_value):
+        if any(ord(char) < 32 for char in text_value if char not in "\n\r\t"):
             raise ValueError(f"{field_name} cannot contain control characters.")
         return text_value
 
@@ -345,7 +561,7 @@ def ensure_task_lifecycle_schema_for_bind(bind: Any, force: bool = False) -> Non
 
         inspector = inspect(bind)
         table_names = inspector.get_table_names()
-        if "tasks" not in table_names:
+        if "tasks" not in table_names or "goals" not in table_names:
             Base.metadata.create_all(bind=bind)
             inspector = inspect(bind)
             table_names = inspector.get_table_names()
@@ -357,6 +573,11 @@ def ensure_task_lifecycle_schema_for_bind(bind: Any, force: bool = False) -> Non
         missing = [
             (name, ddl)
             for name, ddl in (
+                ("description", "VARCHAR(1000)"),
+                ("deadline", "DATETIME"),
+                ("dependencies", "VARCHAR(500)"),
+                ("goal_id", "INTEGER"),
+                ("context_info", "VARCHAR(1000)"),
                 ("created_at", "DATETIME"),
                 ("lifecycle_state", "VARCHAR(32)"),
                 ("outcome_valid", "BOOLEAN"),

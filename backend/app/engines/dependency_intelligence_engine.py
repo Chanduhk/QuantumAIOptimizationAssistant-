@@ -139,17 +139,23 @@ class DependencyIntelligenceEngine:
         raw_dependencies = task.get("depends_on_task_ids", task.get("dependencies", []))
         if raw_dependencies in (None, ""):
             return []
-        if isinstance(raw_dependencies, str):
+        if isinstance(raw_dependencies, (str, int)) and not isinstance(raw_dependencies, bool):
             raw_values: Iterable[Any] = [raw_dependencies]
-        elif isinstance(raw_dependencies, list):
+        elif isinstance(raw_dependencies, (list, tuple, set)):
             raw_values = raw_dependencies
         else:
             raise ValueError("depends_on_task_ids must be a list of task ids.")
         dependency_ids: List[str] = []
         for value in raw_values:
-            if not isinstance(value, str) or not value.strip():
+            if value is None or isinstance(value, bool):
                 raise ValueError("depends_on_task_ids must contain non-empty strings.")
-            dependency_ids.append(value.strip())
+            if isinstance(value, (str, int)):
+                s_val = str(value).strip()
+                if not s_val:
+                    raise ValueError("depends_on_task_ids must contain non-empty strings.")
+                dependency_ids.append(s_val)
+            else:
+                raise ValueError("depends_on_task_ids must contain non-empty strings.")
         return sorted(set(dependency_ids))
 
     def _validate_tasks(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -160,10 +166,12 @@ class DependencyIntelligenceEngine:
         for task in tasks:
             if not isinstance(task, dict):
                 raise ValueError("Each task must be a dictionary.")
-            task_id = task.get("id")
-            if not isinstance(task_id, str) or not task_id.strip():
+            raw_id = task.get("id")
+            if raw_id is None or isinstance(raw_id, bool):
                 raise ValueError("Each task requires a non-empty string id.")
-            task_id = task_id.strip()
+            task_id = str(raw_id).strip()
+            if not task_id:
+                raise ValueError("Each task requires a non-empty string id.")
             if task_id in seen_ids:
                 raise ValueError("task ids must be unique.")
             seen_ids.add(task_id)
@@ -175,7 +183,9 @@ class DependencyIntelligenceEngine:
         return normalized
 
     def _completed_task_ids(self, tasks: List[Dict[str, Any]]) -> set[str]:
-        return {task["id"] for task in tasks if bool(task.get("completed"))}
+        task_completed = {task["id"] for task in tasks if bool(task.get("completed"))}
+        persisted = getattr(self, "persisted_completed_task_ids", set())
+        return task_completed | {str(cid) for cid in persisted}
 
     def _downstream_count(self, task_id: str) -> int:
         visited = set()

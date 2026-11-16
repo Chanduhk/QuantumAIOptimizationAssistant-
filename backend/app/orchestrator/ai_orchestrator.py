@@ -284,6 +284,31 @@ class AIOrchestrator:
         patterns = behavior_patterns if behavior_patterns is not None else self._load_behavior_patterns(user_id=user_id, days_back=None)
         self._validate_behavior_patterns(patterns)
         optimization_evidence = self._build_hybrid_optimization_evidence(normalized_tasks, user_id=user_id)
+        # Pre-seed dependency intelligence engine with user's persisted tasks if session is available
+        if getattr(self, "session", None) is not None:
+            try:
+                from backend.app.models.task import Task
+                user_db_tasks = self.session.query(Task).filter(Task.user_id == user_id).all()
+                dep_engine = getattr(self, "dependency_intelligence_engine", None)
+                if dep_engine is not None and getattr(dep_engine, "dependency_graph", None) is not None:
+                    persisted_completed = set()
+                    for ut in user_db_tasks:
+                        dep_engine.dependency_graph.tasks.add(str(ut.id))
+                        if ut.completed or ut.lifecycle_state == "completed":
+                            persisted_completed.add(str(ut.id))
+                    dep_engine.persisted_completed_task_ids = persisted_completed
+            except Exception:
+                pass
+
+        if goals is None and getattr(self, "session", None) is not None:
+            try:
+                from backend.app.services.goal_service import GoalService
+                goal_svc = GoalService(self.session)
+                db_goals = goal_svc.list_goals(user_id=user_id)
+                goals = [goal_svc.serialize_goal(g) for g in db_goals]
+            except Exception:
+                goals = []
+
         result = self.executive_cognitive_brain.execute_planning_request(
             normalized_tasks,
             user_id=user_id,
@@ -560,17 +585,25 @@ class AIOrchestrator:
             estimated_duration = task.get("estimated_duration", task.get("duration", 1.0))
             duration = self._positive_finite_number(estimated_duration, field_name="duration")
             priority = self._positive_integer(task.get("priority", 1), field_name="priority")
+            raw_task_id = task.get("id")
+            task_id = str(raw_task_id).strip() if raw_task_id is not None and not isinstance(raw_task_id, bool) else f"input-{index}"
+            if not task_id:
+                task_id = f"input-{index}"
             normalized_tasks.append(
                 {
-                    "id": task.get("id", f"input-{index}"),
-                    "original_task_id": task.get("id"),
+                    "id": task_id,
+                    "original_task_id": raw_task_id,
                     "goal_id": task.get("goal_id"),
                     "depends_on_task_ids": task.get("depends_on_task_ids", task.get("dependencies", [])),
                     "user_id": None,
                     "title": title,
+                    "description": task.get("description"),
                     "task_type": task_type,
                     "priority": priority,
                     "estimated_duration": duration,
+                    "deadline": task.get("deadline"),
+                    "deadline_dt": task.get("deadline_dt"),
+                    "context_info": task.get("context_info"),
                     # Preserve the existing normalized values for general planning
                     # and legacy prediction. Optimizer adapters must read explicit
                     # provenance from original_payload instead of these fallbacks.
@@ -587,20 +620,34 @@ class AIOrchestrator:
                 }
             )
 
-        id_map = {
-            str(task["original_task_id"]): task["id"]
-            for task in normalized_tasks
-            if task.get("original_task_id") is not None
-        }
+        id_map: Dict[str, str] = {}
         for task in normalized_tasks:
-            dependencies = task.get("depends_on_task_ids")
-            if isinstance(dependencies, list):
-                task["depends_on_task_ids"] = [
-                    id_map.get(str(dependency), dependency)
-                    for dependency in dependencies
-                ]
-            elif isinstance(dependencies, str):
-                task["depends_on_task_ids"] = [id_map.get(dependencies, dependencies)]
+            orig = task.get("original_task_id")
+            if orig is not None:
+                id_map[str(orig)] = task["id"]
+            id_map[task["id"]] = task["id"]
+
+        for task in normalized_tasks:
+            raw_deps = task.get("depends_on_task_ids")
+            if raw_deps is None or raw_deps == "":
+                task["depends_on_task_ids"] = []
+            elif isinstance(raw_deps, (list, tuple, set)):
+                cleaned_deps: List[str] = []
+                for dep in raw_deps:
+                    if dep is None or isinstance(dep, bool):
+                        raise ValueError("depends_on_task_ids must contain non-empty strings.")
+                    s_dep = str(dep).strip()
+                    if not s_dep:
+                        raise ValueError("depends_on_task_ids must contain non-empty strings.")
+                    cleaned_deps.append(id_map.get(s_dep, s_dep))
+                task["depends_on_task_ids"] = cleaned_deps
+            elif isinstance(raw_deps, (str, int)) and not isinstance(raw_deps, bool):
+                s_dep = str(raw_deps).strip()
+                if not s_dep:
+                    raise ValueError("depends_on_task_ids must contain non-empty strings.")
+                task["depends_on_task_ids"] = [id_map.get(s_dep, s_dep)]
+            else:
+                raise ValueError("depends_on_task_ids must be a list of task ids.")
 
         return normalized_tasks
 

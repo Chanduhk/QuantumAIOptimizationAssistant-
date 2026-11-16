@@ -2,7 +2,7 @@ import os
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Union
 
 from dotenv import load_dotenv
 
@@ -18,7 +18,7 @@ load_dotenv()
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -111,13 +111,71 @@ class MemorySearchRequest(BaseModel):
 
 
 class OrchestratorTaskInput(BaseModel):
-    id: Optional[int] = Field(default=None, ge=1)
+    id: Optional[Union[str, int]] = None
     title: str = Field(..., min_length=1)
     type: str = Field(..., min_length=1)
     priority: int = Field(..., ge=1)
     duration: float = Field(..., gt=0)
-    estimated_duration_unit: Optional[Literal["minutes"]] = None
+    estimated_duration_unit: Optional[Literal["minutes", "hours"]] = None
     estimated_duration_source: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    deadline: Optional[datetime] = None
+    dependencies: Optional[List[Any]] = None
+    depends_on_task_ids: List[str] = Field(default_factory=list)
+    goal_id: Optional[int] = None
+    context_info: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_dependencies_and_id(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        raw_id = data.get("id")
+        if raw_id is not None:
+            if isinstance(raw_id, bool):
+                raise ValueError("Task ID must be a valid non-empty string.")
+            s_id = str(raw_id).strip()
+            if not s_id:
+                raise ValueError("Task ID must be a valid non-empty string.")
+            data["id"] = s_id
+
+        raw_deps = data.get("depends_on_task_ids")
+        if raw_deps is None and "dependencies" in data:
+            raw_deps = data.get("dependencies")
+
+        if raw_deps in (None, ""):
+            data["depends_on_task_ids"] = []
+            data["dependencies"] = []
+            return data
+
+        if isinstance(raw_deps, (str, int)) and not isinstance(raw_deps, bool):
+            raw_deps = [raw_deps]
+        elif not isinstance(raw_deps, (list, tuple, set)):
+            raise ValueError("depends_on_task_ids must be a list of task ids.")
+
+        cleaned_deps: List[str] = []
+        for item in raw_deps:
+            if item is None or isinstance(item, bool):
+                raise ValueError("depends_on_task_ids must contain non-empty strings.")
+            if isinstance(item, (str, int)):
+                s_item = str(item).strip()
+                if not s_item:
+                    raise ValueError("depends_on_task_ids must contain non-empty strings.")
+                cleaned_deps.append(s_item)
+            else:
+                raise ValueError("depends_on_task_ids must contain non-empty strings.")
+
+        seen = set()
+        deduped = []
+        for d in cleaned_deps:
+            if d not in seen:
+                seen.add(d)
+                deduped.append(d)
+
+        data["depends_on_task_ids"] = deduped
+        data["dependencies"] = deduped
+        return data
 
 
 class OrchestratorRunRequest(BaseModel):
@@ -170,8 +228,61 @@ class TaskCreateRequest(BaseModel):
     task_type: str = Field(..., min_length=1, max_length=100)
     priority: int = Field(default=3, ge=1, le=5)
     estimated_duration: float = Field(..., gt=0)
-    estimated_duration_unit: Literal["minutes"] = "minutes"
+    estimated_duration_unit: Literal["minutes", "hours"] = "minutes"
     created_at: Optional[datetime] = None
+    description: Optional[str] = None
+    deadline: Optional[datetime] = None
+    dependencies: Optional[List[int]] = None
+    goal_id: Optional[int] = None
+    context_info: Optional[str] = None
+
+
+class TaskUpdateRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    task_type: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    priority: Optional[int] = Field(default=None, ge=1, le=5)
+    estimated_duration: Optional[float] = Field(default=None, gt=0)
+    estimated_duration_unit: Optional[Literal["minutes", "hours"]] = None
+    deadline: Optional[datetime] = None
+    dependencies: Optional[List[int]] = None
+    goal_id: Optional[int] = None
+    context_info: Optional[str] = None
+    clear_deadline: bool = False
+    clear_goal: bool = False
+    clear_dependencies: bool = False
+
+
+class GoalCreateRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    category: Optional[str] = Field(default="general", max_length=100)
+    priority: int = Field(default=3, ge=1, le=5)
+    target_date: Optional[datetime] = None
+    status: Optional[str] = Field(default="active", max_length=50)
+    progress: Optional[float] = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class GoalUpdateRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    category: Optional[str] = Field(default=None, max_length=100)
+    priority: Optional[int] = Field(default=None, ge=1, le=5)
+    target_date: Optional[datetime] = None
+    status: Optional[str] = Field(default=None, max_length=50)
+    progress: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    clear_target_date: bool = False
+
+
+class GoalResponse(BaseModel):
+    goal: Dict[str, Any]
+
+
+class GoalListResponse(BaseModel):
+    goals: List[Dict[str, Any]]
 
 
 class AuthenticationRequest(BaseModel):
@@ -344,6 +455,7 @@ class ExecutivePlanRequest(BaseModel):
     tasks: List[OrchestratorTaskInput] = Field(..., min_length=1)
     query: Optional[str] = None
     days_back: int = Field(default=90, ge=1, le=3650)
+    goals: Optional[List[Dict[str, Any]]] = None
 
 
 class SystemHealthResponse(BaseModel):
@@ -510,10 +622,66 @@ def create_task(
             estimated_duration_unit=request.estimated_duration_unit,
             estimated_duration_source="task_api",
             created_at=request.created_at,
+            description=request.description,
+            deadline=request.deadline,
+            dependencies=request.dependencies,
+            goal_id=request.goal_id,
+            context_info=request.context_info,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return MultiEngineResponse(result={"task": service.serialize_task(task)})
+
+
+@app.put("/api/v1/tasks/{task_id}", response_model=MultiEngineResponse)
+@app.patch("/api/v1/tasks/{task_id}", response_model=MultiEngineResponse)
+def update_task(
+    task_id: int,
+    request: TaskUpdateRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_task_lifecycle_service(db)
+    try:
+        task = service.update_task(
+            task_id=task_id,
+            user_id=request.user_id,
+            title=request.title,
+            description=request.description,
+            task_type=request.task_type,
+            priority=request.priority,
+            estimated_duration=request.estimated_duration,
+            estimated_duration_unit=request.estimated_duration_unit,
+            deadline=request.deadline,
+            dependencies=request.dependencies,
+            goal_id=request.goal_id,
+            context_info=request.context_info,
+            clear_deadline=request.clear_deadline,
+            clear_goal=request.clear_goal,
+            clear_dependencies=request.clear_dependencies,
+        )
+        return MultiEngineResponse(result={"task": service.serialize_task(task)})
+    except ValueError as exc:
+        msg = str(exc).lower()
+        if "not found" in msg or "unauthorized" in msg:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/v1/tasks/{task_id}", response_model=MultiEngineResponse)
+def delete_task(
+    task_id: int,
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_task_lifecycle_service(db)
+    try:
+        service.delete_task(task_id=task_id, user_id=user_id)
+        return MultiEngineResponse(result={"deleted": True, "task_id": task_id})
+    except ValueError as exc:
+        msg = str(exc).lower()
+        if "not found" in msg or "unauthorized" in msg:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/tasks/{task_id}/start", response_model=MultiEngineResponse)
@@ -966,20 +1134,34 @@ def get_active_plan(
     return MultiEngineResponse(result={"active_proposal": active.to_dict() if active else None})
 
 
+FRIENDLY_MODEL_NAMES: Dict[str, str] = {
+    "gemini-3.8-flash": "Gemini 3.8 Flash",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini-2.0-flash": "Gemini 2.0 Flash",
+    "gemini-1.5-flash": "Gemini 1.5 Flash",
+    "gemini-1.5-pro": "Gemini 1.5 Pro",
+    "gpt-4o-mini": "GPT-4o mini",
+    "gpt-4o": "GPT-4o",
+}
+
+
+def get_friendly_model_name(raw_model: str) -> str:
+    if raw_model in FRIENDLY_MODEL_NAMES:
+        return FRIENDLY_MODEL_NAMES[raw_model]
+    if raw_model and raw_model.lower().startswith("gemini"):
+        parts = raw_model.split("-")
+        return " ".join(p.capitalize() for p in parts)
+    return raw_model or "Gemini 3.8 Flash"
+
+
 class ProviderStatusResponse(BaseModel):
     provider: str
     model: str
+    display_model: str
     is_configured: bool
-    has_api_key: bool
-    masked_key: str
-    endpoint: str
     status: str
     status_label: str
     fallback_active: bool
-    timeout_seconds: float
-    supported_models: List[str]
-    last_error: Optional[str] = None
-    error_category: Optional[str] = None
 
 
 @app.get(
@@ -989,7 +1171,17 @@ class ProviderStatusResponse(BaseModel):
 def get_ai_provider_status() -> ProviderStatusResponse:
     from backend.app.interface.llm_provider import get_default_llm_provider
     provider = get_default_llm_provider()
-    return ProviderStatusResponse(**provider.get_status())
+    raw_status = provider.get_status()
+    raw_model = str(raw_status.get("model") or "gemini-3.8-flash")
+    return ProviderStatusResponse(
+        provider=str(raw_status.get("provider") or "gemini"),
+        model=raw_model,
+        display_model=get_friendly_model_name(raw_model),
+        is_configured=bool(raw_status.get("is_configured", False)),
+        status=str(raw_status.get("status") or "gemini_unconfigured"),
+        status_label=str(raw_status.get("status_label") or "Configured"),
+        fallback_active=bool(raw_status.get("fallback_active", False)),
+    )
 
 
 @app.post(
@@ -1000,17 +1192,29 @@ def test_ai_provider_connection() -> ProviderTestResponse:
     from backend.app.interface.llm_provider import get_default_llm_provider
     provider = get_default_llm_provider()
     if hasattr(provider, "test_connection"):
-        success, message = provider.test_connection()
+        success, raw_message = provider.test_connection()
     else:
         success = provider.is_configured()
-        message = f"Provider {provider.provider_name} does not implement active test connection."
+        raw_message = f"Provider {provider.provider_name} does not implement active test connection."
     status_dict = provider.get_status()
+    raw_model = str(status_dict.get("model") or "gemini-3.8-flash")
+    friendly = get_friendly_model_name(raw_model)
+
+    if success:
+        clean_message = f"Connection to {friendly} succeeded."
+    elif not provider.is_configured():
+        clean_message = f"{friendly} is not configured."
+    else:
+        clean_message = raw_message
+        for sensitive_term in ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GROQ_API_KEY"]:
+            clean_message = clean_message.replace(f"({sensitive_term} missing)", "credentials missing")
+            clean_message = clean_message.replace(f"Please check your {sensitive_term}.", "Please check your credentials.")
+        clean_message = clean_message.replace(raw_model, friendly)
+
     return ProviderTestResponse(
         success=success,
-        message=message,
-        status=status_dict["status"],
-        last_error=status_dict.get("last_error"),
-        error_category=status_dict.get("error_category"),
+        message=clean_message,
+        status=str(status_dict.get("status") or ("gemini_configured" if success else "gemini_unconfigured")),
     )
 
 
@@ -1265,6 +1469,202 @@ def ai_get_context(
     return MultiEngineResponse(result=result)
 
 
+def _build_goal_service(session: Session):
+    from backend.app.services.goal_service import GoalService
+    return GoalService(session)
+
+
+@app.post("/api/v1/goals", response_model=GoalResponse)
+def create_goal(
+    request: GoalCreateRequest,
+    db: Session = Depends(get_db),
+) -> GoalResponse:
+    service = _build_goal_service(db)
+    try:
+        goal = service.create_goal(
+            user_id=request.user_id,
+            title=request.title,
+            description=request.description,
+            category=request.category,
+            priority=request.priority,
+            target_date=request.target_date,
+            status=request.status or "active",
+            progress=request.progress or 0.0,
+        )
+        return GoalResponse(goal=service.serialize_goal(goal))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/goals", response_model=GoalListResponse)
+def list_goals(
+    user_id: int = Query(..., ge=1),
+    status: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+) -> GoalListResponse:
+    service = _build_goal_service(db)
+    goals = service.list_goals(user_id=user_id, status=status)
+    return GoalListResponse(goals=[service.serialize_goal(g) for g in goals])
+
+
+@app.get("/api/v1/goals/{goal_id}", response_model=GoalResponse)
+def get_goal(
+    goal_id: int,
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> GoalResponse:
+    service = _build_goal_service(db)
+    try:
+        goal = service.get_goal(goal_id=goal_id, user_id=user_id)
+        return GoalResponse(goal=service.serialize_goal(goal))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/v1/goals/{goal_id}", response_model=GoalResponse)
+@app.patch("/api/v1/goals/{goal_id}", response_model=GoalResponse)
+def update_goal(
+    goal_id: int,
+    request: GoalUpdateRequest,
+    db: Session = Depends(get_db),
+) -> GoalResponse:
+    service = _build_goal_service(db)
+    try:
+        goal = service.update_goal(
+            goal_id=goal_id,
+            user_id=request.user_id,
+            title=request.title,
+            description=request.description,
+            category=request.category,
+            priority=request.priority,
+            target_date=request.target_date,
+            status=request.status,
+            progress=request.progress,
+            clear_target_date=request.clear_target_date,
+        )
+        return GoalResponse(goal=service.serialize_goal(goal))
+    except ValueError as exc:
+        msg = str(exc).lower()
+        if "not found" in msg or "unauthorized" in msg:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/v1/goals/{goal_id}", response_model=MultiEngineResponse)
+def delete_goal(
+    goal_id: int,
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_goal_service(db)
+    try:
+        service.delete_goal(goal_id=goal_id, user_id=user_id)
+        return MultiEngineResponse(result={"deleted": True, "goal_id": goal_id})
+    except ValueError as exc:
+        msg = str(exc).lower()
+        if "not found" in msg or "unauthorized" in msg:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _build_goal_service(session: Session):
+    from backend.app.services.goal_service import GoalService
+    return GoalService(session)
+
+
+@app.post("/api/v1/goals", response_model=GoalResponse)
+def create_goal(
+    request: GoalCreateRequest,
+    db: Session = Depends(get_db),
+) -> GoalResponse:
+    service = _build_goal_service(db)
+    try:
+        goal = service.create_goal(
+            user_id=request.user_id,
+            title=request.title,
+            description=request.description,
+            category=request.category,
+            priority=request.priority,
+            target_date=request.target_date,
+            status=request.status or "active",
+            progress=request.progress or 0.0,
+        )
+        return GoalResponse(goal=service.serialize_goal(goal))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/goals", response_model=GoalListResponse)
+def list_goals(
+    user_id: int = Query(..., ge=1),
+    status: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+) -> GoalListResponse:
+    service = _build_goal_service(db)
+    goals = service.list_goals(user_id=user_id, status=status)
+    return GoalListResponse(goals=[service.serialize_goal(g) for g in goals])
+
+
+@app.get("/api/v1/goals/{goal_id}", response_model=GoalResponse)
+def get_goal(
+    goal_id: int,
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> GoalResponse:
+    service = _build_goal_service(db)
+    try:
+        goal = service.get_goal(goal_id=goal_id, user_id=user_id)
+        return GoalResponse(goal=service.serialize_goal(goal))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/v1/goals/{goal_id}", response_model=GoalResponse)
+@app.patch("/api/v1/goals/{goal_id}", response_model=GoalResponse)
+def update_goal(
+    goal_id: int,
+    request: GoalUpdateRequest,
+    db: Session = Depends(get_db),
+) -> GoalResponse:
+    service = _build_goal_service(db)
+    try:
+        goal = service.update_goal(
+            goal_id=goal_id,
+            user_id=request.user_id,
+            title=request.title,
+            description=request.description,
+            category=request.category,
+            priority=request.priority,
+            target_date=request.target_date,
+            status=request.status,
+            progress=request.progress,
+            clear_target_date=request.clear_target_date,
+        )
+        return GoalResponse(goal=service.serialize_goal(goal))
+    except ValueError as exc:
+        msg = str(exc).lower()
+        if "not found" in msg or "unauthorized" in msg:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/v1/goals/{goal_id}", response_model=MultiEngineResponse)
+def delete_goal(
+    goal_id: int,
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_goal_service(db)
+    try:
+        service.delete_goal(goal_id=goal_id, user_id=user_id)
+        return MultiEngineResponse(result={"deleted": True, "goal_id": goal_id})
+    except ValueError as exc:
+        msg = str(exc).lower()
+        if "not found" in msg or "unauthorized" in msg:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/v1/tasks", response_model=TaskListResponse)
 def list_tasks(
     user_id: int = Query(..., ge=1),
@@ -1299,12 +1699,70 @@ def generate_executive_plan(
     request: ExecutivePlanRequest,
     db: Session = Depends(get_db),
 ) -> MultiEngineResponse:
+    submitted_task_ids = {str(task.id).strip() for task in request.tasks if task.id}
+
+    # 1. Detect self-dependencies (Case F)
+    for task in request.tasks:
+        tid = str(task.id).strip() if task.id else None
+        if tid and tid in task.depends_on_task_ids:
+            raise HTTPException(status_code=400, detail="A task cannot depend on itself.")
+
+    # 2. Detect cycles among submitted tasks (Case G)
+    from backend.app.knowledge.dependency_graph import DependencyGraph
+    from backend.app.domain.dependency_model import TaskDependency
+    cycle_graph = DependencyGraph()
+    for task in request.tasks:
+        tid = str(task.id).strip() if task.id else None
+        if tid:
+            cycle_graph.tasks.add(tid)
+            for dep in task.depends_on_task_ids:
+                if dep in submitted_task_ids:
+                    cycle_graph.add_dependency(
+                        TaskDependency(
+                            dependency_id=f"chk:{tid}:{dep}",
+                            task_id=tid,
+                            depends_on_task_id=dep,
+                        )
+                    )
+    cycles = cycle_graph.detect_cycles()
+    if cycles:
+        cycle_str = " -> ".join(cycles[0])
+        raise HTTPException(
+            status_code=400,
+            detail=f"Circular dependency detected among tasks: {cycle_str}.",
+        )
+
+    # 3. Validate unselected / external dependency references (Case H / J)
+    from backend.app.models.task import Task
+    external_deps = set()
+    for task in request.tasks:
+        for dep in task.depends_on_task_ids:
+            if dep not in submitted_task_ids:
+                external_deps.add(dep)
+    if external_deps:
+        numeric_ids = []
+        for dep in external_deps:
+            try:
+                numeric_ids.append(int(dep))
+            except (ValueError, TypeError):
+                pass
+        db_tasks = db.query(Task).filter(Task.user_id == request.user_id, Task.id.in_(numeric_ids)).all() if numeric_ids else []
+        found_ids = {str(dbt.id) for dbt in db_tasks}
+        unauthorized_or_missing = external_deps - found_ids
+        if unauthorized_or_missing:
+            first_missing = sorted(unauthorized_or_missing)[0]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Prerequisite task '{first_missing}' not found or unauthorized.",
+            )
+
     orchestrator = _build_orchestrator(db, days_back=request.days_back)
     try:
         result = orchestrator.execute_executive_planning(
             tasks=[task.model_dump() for task in request.tasks],
             user_id=request.user_id,
             query=request.query,
+            goals=request.goals,
         )
         return MultiEngineResponse(result=_normalize_numpy_response_values(result))
     except ValueError as exc:

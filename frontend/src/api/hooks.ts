@@ -4,9 +4,13 @@ import {
   ExecutivePlanRequest,
   CommandRequest,
   TaskCreateRequest,
+  TaskUpdateRequest,
   TaskStartRequest,
   TaskCompleteRequest,
   TaskFeedbackRequest,
+  GoalCreateRequest,
+  GoalUpdateRequest,
+  type Goal,
   type AuthUser,
   type ExecutivePlanResponse,
   type Task,
@@ -386,6 +390,117 @@ export function useSubmitTaskFeedback() {
       queryClient.invalidateQueries({ queryKey: ["ml", "readiness"] });
       queryClient.invalidateQueries({ queryKey: ["ml", "status"] });
       queryClient.invalidateQueries({ queryKey: ["learning"] });
+    },
+  });
+}
+
+export function useUpdateTask() {
+  const queryClient = useQueryClient();
+  const userId = useUserStore((state) => state.userId);
+
+  return useMutation({
+    mutationFn: ({ taskId, data }: { taskId: number; data: Omit<TaskUpdateRequest, "user_id"> }) => {
+      if (userId === null) throw new Error("User ID is required to update a task.");
+      return api.tasks.update(taskId, { ...data, user_id: userId });
+    },
+    onSuccess: (_, { taskId }) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
+      queryClient.invalidateQueries({ queryKey: ["planning", userId] });
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+}
+
+export function useDeleteTask() {
+  const queryClient = useQueryClient();
+  const userId = useUserStore((state) => state.userId);
+
+  return useMutation({
+    mutationFn: (taskId: number) => {
+      if (userId === null) throw new Error("User ID is required to delete a task.");
+      return api.tasks.delete(taskId, userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["planning", userId] });
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+}
+
+export function useGoals(status?: string) {
+  const userId = useUserStore((state) => state.userId);
+
+  return useQuery({
+    queryKey: ["goals", userId, status],
+    queryFn: () => {
+      if (userId === null) throw new Error("User ID is required to fetch goals.");
+      return api.goals.list(userId, status);
+    },
+    enabled: userId !== null,
+    staleTime: 15_000,
+  });
+}
+
+export function useGoal(goalId: number) {
+  const userId = useUserStore((state) => state.userId);
+
+  return useQuery({
+    queryKey: ["goals", goalId, userId],
+    queryFn: () => {
+      if (userId === null) throw new Error("User ID is required to fetch goal.");
+      return api.goals.get(goalId, userId);
+    },
+    enabled: !!goalId && userId !== null,
+  });
+}
+
+export function useCreateGoal() {
+  const queryClient = useQueryClient();
+  const userId = useUserStore((state) => state.userId);
+
+  return useMutation({
+    mutationFn: (data: Omit<GoalCreateRequest, "user_id">) => {
+      if (userId === null) throw new Error("User ID is required to create a goal.");
+      return api.goals.create({ ...data, user_id: userId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useUpdateGoal() {
+  const queryClient = useQueryClient();
+  const userId = useUserStore((state) => state.userId);
+
+  return useMutation({
+    mutationFn: ({ goalId, data }: { goalId: number; data: Omit<GoalUpdateRequest, "user_id"> }) => {
+      if (userId === null) throw new Error("User ID is required to update a goal.");
+      return api.goals.update(goalId, { ...data, user_id: userId });
+    },
+    onSuccess: (_, { goalId }) => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+      queryClient.invalidateQueries({ queryKey: ["goals", goalId] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useDeleteGoal() {
+  const queryClient = useQueryClient();
+  const userId = useUserStore((state) => state.userId);
+
+  return useMutation({
+    mutationFn: (goalId: number) => {
+      if (userId === null) throw new Error("User ID is required to delete a goal.");
+      return api.goals.delete(goalId, userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 }

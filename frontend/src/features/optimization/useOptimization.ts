@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ExecutivePlanResponse, Task } from "@/api/endpoints";
+import type { ExecutivePlanResponse, OrchestratorTaskInput, Task } from "@/api/endpoints";
 import { useCreateExecutivePlan, useLatestExecutiveResult, useTasks } from "@/api/hooks";
 import { useUserStore } from "@/stores/userStore";
 import { isPlanningEligible } from "@/features/tasks/taskUtils";
@@ -22,6 +22,31 @@ function writeStored(userId: number, data: ExecutivePlanResponse) {
   } catch {
     // Storage may be full or unavailable; the in-memory cache still works.
   }
+}
+
+export function mapTasksToOrchestratorInput(selected: Task[]): OrchestratorTaskInput[] {
+  return selected.map((t) => {
+    const depIds: string[] = Array.isArray(t.dependencies)
+      ? t.dependencies
+          .map((d) => (d != null ? String(d).trim() : ""))
+          .filter((d) => d.length > 0)
+      : [];
+    return {
+      id: String(t.id),
+      title: t.title,
+      description: t.description ?? undefined,
+      type: t.task_type,
+      priority: t.priority,
+      duration: t.estimated_duration as number,
+      estimated_duration_unit: (t.estimated_duration_unit as "minutes" | "hours") || "minutes",
+      estimated_duration_source: t.estimated_duration_source ?? undefined,
+      deadline: t.deadline ?? undefined,
+      depends_on_task_ids: depIds,
+      dependencies: depIds,
+      goal_id: t.goal_id ?? undefined,
+      context_info: t.context_info ?? undefined,
+    };
+  });
 }
 
 /**
@@ -58,15 +83,7 @@ export function useOptimization() {
         {
           user_id: userId,
           query: query?.trim() || undefined,
-          tasks: selected.map((t) => ({
-            id: t.id,
-            title: t.title,
-            type: t.task_type,
-            priority: t.priority,
-            duration: t.estimated_duration as number,
-            estimated_duration_unit: "minutes",
-            estimated_duration_source: t.estimated_duration_source ?? undefined,
-          })),
+          tasks: mapTasksToOrchestratorInput(selected),
         },
         {
           onSuccess: (data) => {

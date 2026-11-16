@@ -380,7 +380,7 @@ class DecisionPipeline:
                     dep_boost -= (100 * count)
 
             # 3. Deadline for Earliest Deadline First (EDF)
-            d_dt = orig.get("deadline_dt") or t.get("deadline_dt")
+            d_dt = orig.get("deadline_dt") or t.get("deadline_dt") or orig.get("deadline") or t.get("deadline")
             if isinstance(d_dt, datetime):
                 deadline_val = d_dt.timestamp()
             elif isinstance(d_dt, str) and d_dt:

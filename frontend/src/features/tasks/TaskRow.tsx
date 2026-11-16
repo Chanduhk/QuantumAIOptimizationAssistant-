@@ -1,7 +1,7 @@
 import * as React from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, Clock3, MessageSquarePlus, Play, Star } from "lucide-react";
-import type { Task } from "@/api/endpoints";
+import { AlertCircle, Calendar, CheckCheck, Clock3, Link2, MessageSquarePlus, Pencil, Play, Star, Target } from "lucide-react";
+import type { Task, Goal } from "@/api/endpoints";
 import { isAlreadyCompletedError, isAlreadyStartedError, useCompleteTask, useStartTask } from "@/api/hooks";
 import { getApiErrorMessage } from "@/api/client";
 import { Badge } from "@/components/ui/Badge";
@@ -32,10 +32,13 @@ const stateRail: Record<string, string> = {
 interface TaskRowProps {
   task: Task;
   onRequestFeedback: (task: Task) => void;
+  onEdit?: (task: Task) => void;
+  goal?: Goal;
+  allTasks?: Task[];
   compact?: boolean;
 }
 
-export function TaskRow({ task, onRequestFeedback, compact }: TaskRowProps) {
+export function TaskRow({ task, onRequestFeedback, onEdit, goal, allTasks, compact }: TaskRowProps) {
   const state = lifecycle(task);
   const startTask = useStartTask();
   const completeTask = useCompleteTask();
@@ -78,6 +81,30 @@ export function TaskRow({ task, onRequestFeedback, compact }: TaskRowProps) {
   const elapsed = state === "started" ? elapsedMinutes(task, now) : null;
   const rated = hasFeedback(task);
 
+  // Deadline & Overdue calculation
+  const deadlineDt = task.deadline ? new Date(task.deadline) : null;
+  const isOverdue =
+    deadlineDt !== null &&
+    !isNaN(deadlineDt.getTime()) &&
+    state !== "completed" &&
+    deadlineDt.getTime() < now;
+
+  // Dependencies check
+  const dependencyIds = React.useMemo(() => {
+    if (!task.dependencies) return [];
+    if (Array.isArray(task.dependencies)) return task.dependencies.map(Number).filter(Boolean);
+    return [];
+  }, [task.dependencies]);
+
+  const hasIncompleteDependencies = React.useMemo(() => {
+    if (!dependencyIds.length || !allTasks) return false;
+    const taskMap = new Map(allTasks.map((t) => [t.id, t]));
+    return dependencyIds.some((did) => {
+      const dep = taskMap.get(did);
+      return dep && !dep.completed;
+    });
+  }, [dependencyIds, allTasks]);
+
   return (
     <motion.li
       layout="position"
@@ -93,10 +120,46 @@ export function TaskRow({ task, onRequestFeedback, compact }: TaskRowProps) {
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className={cn("truncate text-sm font-medium", state === "completed" ? "text-content-secondary" : "text-content-primary")}>{task.title}</p>
+          <p className={cn("truncate text-sm font-medium", state === "completed" ? "text-content-secondary" : "text-content-primary")}>
+            {task.title}
+          </p>
           {state === "started" && <Badge tone="primary" dot pulse>{LIFECYCLE_META.started.label}</Badge>}
           {state === "unknown" && <Badge tone="warning">{LIFECYCLE_META.unknown.label}</Badge>}
+
+          {/* Goal badge */}
+          {goal && (
+            <Badge tone="primary" className="inline-flex items-center gap-1 font-normal text-[11px]">
+              <Target className="size-2.5" />
+              {goal.title}
+            </Badge>
+          )}
+
+          {/* Deadline / Overdue badge */}
+          {deadlineDt && (
+            <Badge
+              tone={isOverdue ? "error" : "neutral"}
+              className={cn("inline-flex items-center gap-1 text-[11px]", isOverdue && "font-semibold")}
+            >
+              {isOverdue ? <AlertCircle className="size-2.5" /> : <Calendar className="size-2.5" />}
+              {isOverdue ? "Overdue" : `Due ${formatRelative(task.deadline)}`}
+            </Badge>
+          )}
+
+          {/* Dependency status badge */}
+          {hasIncompleteDependencies && state !== "completed" && (
+            <Badge tone="warning" className="inline-flex items-center gap-1 text-[11px]">
+              <Link2 className="size-2.5" />
+              Blocked by prereq
+            </Badge>
+          )}
         </div>
+
+        {task.description && (
+          <p className="mt-0.5 line-clamp-1 text-xs text-content-tertiary">
+            {task.description}
+          </p>
+        )}
+
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-content-tertiary">
           <span className="capitalize">{task.task_type}</span>
           <span className="inline-flex items-center gap-1">
@@ -129,6 +192,17 @@ export function TaskRow({ task, onRequestFeedback, compact }: TaskRowProps) {
 
       <div className="flex items-center gap-2 sm:justify-end">
         <Badge tone={priority.tone} className="font-mono">P{task.priority} · {priority.label}</Badge>
+        {onEdit && state !== "completed" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onEdit(task)}
+            aria-label={`Edit ${task.title}`}
+            className="text-content-tertiary hover:text-content-primary"
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        )}
         {state === "created" && (
           <Button size="sm" variant="secondary" leftIcon={<Play />} onClick={onStart} isLoading={startTask.isPending} disabled={pending} aria-label={`Start ${task.title}`}>
             Start
