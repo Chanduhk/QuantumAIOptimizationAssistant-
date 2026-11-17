@@ -15,12 +15,12 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary text-primary-foreground hover:bg-primary-hover shadow-[0_1px_0_0_hsl(var(--highlight)/0.25)_inset,0_1px_2px_0_rgb(0_0_0/0.2)]",
-  secondary: "bg-surface-2 text-content-primary border border-border hover:bg-surface-3",
-  outline: "border border-border text-content-secondary hover:text-content-primary hover:bg-surface-2",
+    "bg-primary text-primary-foreground hover:bg-primary-hover shadow-[0_1px_0_0_hsl(var(--highlight)/0.25)_inset,0_1px_2px_0_rgb(0_0_0/0.2)] hover:shadow-[0_2px_8px_-2px_hsl(var(--primary)/0.5)] hover:-translate-y-0.5",
+  secondary: "bg-surface-2 text-content-primary border border-border hover:bg-surface-3 hover:-translate-y-0.5",
+  outline: "border border-border text-content-secondary hover:text-content-primary hover:bg-surface-2 hover:-translate-y-0.5",
   ghost: "text-content-secondary hover:text-content-primary hover:bg-surface-2",
-  danger: "bg-status-error/10 text-status-error border border-status-error/25 hover:bg-status-error/15",
-  quantum: "bg-quantum text-quantum-foreground hover:bg-quantum/90",
+  danger: "bg-status-error/10 text-status-error border border-status-error/25 hover:bg-status-error/15 hover:-translate-y-0.5",
+  quantum: "bg-quantum text-quantum-foreground hover:bg-quantum/90 hover:shadow-[0_2px_8px_-2px_hsl(var(--quantum)/0.5)] hover:-translate-y-0.5",
 };
 
 const sizes: Record<ButtonSize, string> = {

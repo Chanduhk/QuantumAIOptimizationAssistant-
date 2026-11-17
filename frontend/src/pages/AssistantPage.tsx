@@ -16,6 +16,7 @@ import { MessageView } from "@/features/assistant/MessageView";
 import { providerState } from "@/lib/status";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { FadeIn, StaggerContainer, StaggerItem } from "@/components/motion";
 
 const STARTERS = [
   { icon: CalendarRange, title: "Plan my day", prompt: "Plan my day: finish the project report (2 hours, due today), review pull requests (45 minutes) and go to the gym for an hour." },
@@ -47,7 +48,7 @@ function Composer({ onSend, disabled }: { onSend: (text: string) => void; disabl
         e.preventDefault();
         submit();
       }}
-      className="relative rounded-2xl border border-border bg-surface-1 shadow-lift transition-colors focus-within:border-primary/40"
+      className="relative rounded-2xl border border-border bg-surface-1 shadow-lift transition-all duration-300 focus-within:border-primary/50 focus-within:shadow-[0_0_24px_-6px_hsl(var(--primary)/0.22)]"
     >
       <textarea
         ref={ref}
@@ -66,7 +67,7 @@ function Composer({ onSend, disabled }: { onSend: (text: string) => void; disabl
       />
       <div className="absolute inset-x-3 bottom-2.5 flex items-center justify-between">
         <span className="text-[11px] text-content-muted"><span className="hidden sm:inline">Enter to send · Shift+Enter for a new line</span></span>
-        <Button type="submit" size="icon-sm" className="rounded-lg" disabled={!text.trim() || disabled} aria-label="Send message">
+        <Button type="submit" size="icon-sm" className="rounded-lg transition-transform duration-200 active:scale-95" disabled={!text.trim() || disabled} aria-label="Send message">
           <ArrowUp />
         </Button>
       </div>
@@ -140,8 +141,16 @@ export function AssistantPage() {
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   const [mobileListOpen, setMobileListOpen] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const userScrolledUp = React.useRef(false);
   const inFlight = React.useRef(false);
   const autoLoaded = React.useRef(false);
+
+  const handleScroll = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    userScrolledUp.current = distanceToBottom > 160;
+  }, []);
 
   const selectConversation = React.useCallback(
     async (conversationId: string) => {
@@ -180,13 +189,16 @@ export function AssistantPage() {
   }, [conversations.data, activeConversationId, messages.length, selectConversation, params]);
 
   React.useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    if (!userScrolledUp.current) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    }
   }, [messages]);
 
   const send = React.useCallback(
     async (text: string, retryId?: string) => {
       const command = text.trim();
       if (!command || inFlight.current || userId === null) return;
+      userScrolledUp.current = false;
       inFlight.current = true;
       const assistantId = retryId ?? crypto.randomUUID();
       if (retryId) updateMessage(assistantId, { isError: false, isPending: true, errorMessage: undefined, result: undefined, timestamp: Date.now() });
@@ -278,7 +290,7 @@ export function AssistantPage() {
           <Button size="sm" variant="ghost" leftIcon={<MessageSquarePlus />} onClick={newChat} className="hidden sm:inline-flex">New</Button>
         </div>
 
-        <div ref={scrollRef} className="scrollbar-thin flex-1 overflow-y-auto">
+        <div ref={scrollRef} onScroll={handleScroll} className="scrollbar-thin flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
             {loadingHistory ? (
               <div className="space-y-4">
@@ -286,35 +298,40 @@ export function AssistantPage() {
                 <Skeleton className="h-48 w-full rounded-2xl" />
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex flex-col items-center pt-[6vh] text-center">
+              <FadeIn duration={0.6} className="flex flex-col items-center pt-[6vh] text-center">
                 <div className="relative mb-6">
-                  <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl" />
-                  <HelioxMark className="relative size-14" animated />
+                  <motion.div
+                    className="absolute inset-[-12px] rounded-full bg-primary/20 blur-2xl"
+                    animate={{ scale: [1, 1.25, 1], opacity: [0.35, 0.7, 0.35] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                  <HelioxMark className="relative size-14 transition-transform duration-300 hover:scale-105" animated />
                 </div>
                 <h1 className="text-2xl font-semibold tracking-tight">What should today look like?</h1>
                 <p className="mt-2 max-w-md text-[14px] leading-relaxed text-content-tertiary">
                   Describe your tasks, deadlines and available time. JAM extracts them, runs the optimization pipeline and proposes a schedule you can refine, accept or reject.
                 </p>
-                <div className="mt-8 grid w-full gap-2.5 sm:grid-cols-2">
+                <StaggerContainer stagger={0.07} delay={0.2} className="mt-8 grid w-full gap-2.5 sm:grid-cols-2">
                   {STARTERS.map((s) => (
-                    <button
-                      key={s.title}
-                      type="button"
-                      onClick={() => void send(s.prompt)}
-                      disabled={isProcessing}
-                      className="group rounded-xl border border-border bg-surface-1 p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-card disabled:opacity-50"
-                    >
-                      <p className="flex items-center gap-2 text-[13px] font-medium"><s.icon className="size-4 text-primary" />{s.title}</p>
-                      <p className="mt-1 line-clamp-2 text-xs text-content-tertiary">{s.prompt}</p>
-                    </button>
+                    <StaggerItem key={s.title}>
+                      <button
+                        type="button"
+                        onClick={() => void send(s.prompt)}
+                        disabled={isProcessing}
+                        className="group w-full rounded-xl border border-border bg-surface-1 p-3.5 text-left transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lift disabled:opacity-50"
+                      >
+                        <p className="flex items-center gap-2 text-[13px] font-medium"><s.icon className="size-4 text-primary transition-transform duration-300 group-hover:scale-110" />{s.title}</p>
+                        <p className="mt-1 line-clamp-2 text-xs text-content-tertiary">{s.prompt}</p>
+                      </button>
+                    </StaggerItem>
                   ))}
-                </div>
+                </StaggerContainer>
                 {!!conversations.data?.length && (
-                  <button type="button" onClick={() => setMobileListOpen(true)} className="mt-6 inline-flex items-center gap-1.5 text-xs text-content-tertiary hover:text-content-primary xl:hidden">
+                  <button type="button" onClick={() => setMobileListOpen(true)} className="mt-6 inline-flex items-center gap-1.5 text-xs text-content-tertiary transition-colors hover:text-content-primary xl:hidden">
                     <History className="size-3.5" /> {conversations.data.length} previous conversations
                   </button>
                 )}
-              </div>
+              </FadeIn>
             ) : (
               <div className="space-y-6">
                 {messages.map((m, i) => (

@@ -34,11 +34,13 @@ function PipelineTrace({ trace }: { trace: Rec | null }) {
           const share = total > 0 ? ((num(s.duration_ms) ?? 0) / total) * 100 : 100 / stages.length;
           const ok = str(s.status) === "SUCCESS";
           return (
-            <span
+            <motion.span
               key={i}
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.max(share, 3)}%` }}
+              transition={{ duration: 0.6, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] }}
               title={`${humanize(str(s.stage))} · ${(num(s.duration_ms) ?? 0).toFixed(0)} ms · ${humanize(str(s.status))}`}
               className={cn("h-full border-r-2 border-surface-1 last:border-r-0", ok ? ["bg-quantum", "bg-primary", "bg-quantum/60", "bg-primary/60"][i % 4] : "bg-status-error")}
-              style={{ width: `${Math.max(share, 3)}%` }}
             />
           );
         })}
@@ -179,9 +181,14 @@ export function ProposalCard({ result, onRefine, fromHistory }: { result: Rec; o
         <div className="space-y-2.5 border-t border-border-subtle bg-surface-2/40 px-4 py-3 dark:border-border">
           {onRefine && (
             <>
-              <div className="scrollbar-none flex gap-1.5 overflow-x-auto">
+              <div className="scrollbar-none flex gap-1.5 overflow-x-auto py-0.5">
                 {REFINEMENTS.map((r) => (
-                  <button key={r} type="button" onClick={() => onRefine(r)} className="shrink-0 rounded-full border border-border bg-surface-1 px-2.5 py-1 text-xs text-content-secondary transition-colors hover:border-primary/40 hover:text-content-primary">
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => onRefine(r)}
+                    className="shrink-0 rounded-full border border-border bg-surface-1 px-2.5 py-1 text-xs text-content-secondary transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/[0.08] hover:text-content-primary hover:shadow-sm"
+                  >
                     {r}
                   </button>
                 ))}

@@ -24,6 +24,7 @@ import { formatRelative, greeting } from "@/lib/format";
 import { providerState, readinessTone } from "@/lib/status";
 import { humanize, recs } from "@/lib/data";
 import { cn } from "@/lib/utils";
+import { FadeIn, StaggerContainer, StaggerItem, AIActivityIndicator } from "@/components/motion";
 
 function useTaskStats(tasks: Task[]) {
   return React.useMemo(() => {
@@ -75,7 +76,7 @@ function ActiveProposal() {
   const blocks = proposalBlocks(proposal?.schedule);
 
   return (
-    <Card className="h-full">
+    <Card hoverLift className="h-full">
       <CardHeader
         icon={<CalendarCheck2 />}
         eyebrow="Layer 9 · Recommendation"
@@ -208,13 +209,20 @@ export function OverviewPage() {
   return (
     <Page wide>
       {/* Hero */}
+      <FadeIn duration={0.5}>
       <section className="relative mb-8 overflow-hidden rounded-3xl border border-border-subtle bg-surface-1 dark:border-border">
         <div className="bg-grid absolute inset-0 opacity-70 [mask-image:linear-gradient(to_right,black,transparent_70%)]" />
         <div className="pointer-events-none absolute -right-20 -top-28 size-[380px] rounded-full bg-primary/15 blur-3xl dark:bg-primary/10" />
         <div className="pointer-events-none absolute -bottom-40 right-40 size-[300px] rounded-full bg-quantum/10 blur-3xl" />
         <div className="relative grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.4fr_1fr] lg:items-end">
           <div>
-            <p className="eyebrow mb-2">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
+            <div className="mb-2 flex items-center gap-2.5">
+              <p className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-1/60 px-2 py-0.5 text-[11px] text-content-tertiary">
+                <AIActivityIndicator active={healthy} className="size-2.5" />
+                <span>{healthy ? "System operational" : "Checking status"}</span>
+              </span>
+            </div>
             <motion.h1 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="text-[28px] font-semibold leading-tight tracking-[-0.02em] sm:text-[34px]">
               {greeting()}{name ? `, ${name}` : ""}.
             </motion.h1>
@@ -241,11 +249,13 @@ export function OverviewPage() {
           </div>
         </div>
       </section>
+      </FadeIn>
 
       {/* KPIs */}
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Planned work" value={stats.planned.length} loading={tasksQuery.isLoading} icon={<ListChecks />} sub={formatDuration(stats.plannedMinutes) + " estimated"} />
-        <Stat label="In progress" value={stats.started.length} loading={tasksQuery.isLoading} icon={<PlayCircle />} accent="primary" sub="Executing now" />
+      <StaggerContainer stagger={0.08} delay={0.15} className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StaggerItem><Stat label="Planned work" value={stats.planned.length} loading={tasksQuery.isLoading} icon={<ListChecks />} sub={formatDuration(stats.plannedMinutes) + " estimated"} /></StaggerItem>
+        <StaggerItem><Stat label="In progress" value={stats.started.length} loading={tasksQuery.isLoading} icon={<PlayCircle />} accent="primary" sub="Executing now" /></StaggerItem>
+        <StaggerItem>
         <Stat
           label="Completed"
           value={stats.completed.length}
@@ -254,6 +264,8 @@ export function OverviewPage() {
           accent="success"
           sub={stats.meanRatio ? <>Actual ÷ estimate <span className="tabular font-mono text-content-secondary">×{stats.meanRatio.toFixed(2)}</span></> : "No timed outcomes yet"}
         />
+        </StaggerItem>
+        <StaggerItem>
         <Stat
           label="Feedback coverage"
           value={stats.completed.length ? `${Math.round((stats.rated.length / stats.completed.length) * 100)}%` : "—"}
@@ -262,11 +274,13 @@ export function OverviewPage() {
           accent="quantum"
           sub={`${stats.rated.length} of ${stats.completed.length} outcomes rated`}
         />
-      </div>
+        </StaggerItem>
+      </StaggerContainer>
 
+      <FadeIn delay={0.25}>
       <div className="mb-6 grid gap-5 xl:grid-cols-[1.35fr_1fr] [&>*]:min-w-0">
         <ActiveProposal />
-        <Card className="h-full">
+        <Card hoverLift className="h-full">
           <CardHeader icon={<ListChecks />} title="Up next" description="In-progress work first, then highest priority." action={<Link to="/tasks" className="text-xs font-medium text-content-tertiary hover:text-content-primary">All tasks</Link>} />
           <CardBody>
             {tasksQuery.isLoading ? (
@@ -283,8 +297,10 @@ export function OverviewPage() {
           </CardBody>
         </Card>
       </div>
+      </FadeIn>
 
       {/* Architecture */}
+      <FadeIn delay={0.35}>
       <Card className="mb-6">
         <CardHeader
           icon={<Layers />}
@@ -305,9 +321,11 @@ export function OverviewPage() {
           </div>
         </CardBody>
       </Card>
+      </FadeIn>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card>
+      <StaggerContainer stagger={0.1} delay={0.4} className="grid gap-5 lg:grid-cols-3">
+        <StaggerItem>
+        <Card hoverLift>
           <CardHeader icon={<GraduationCap />} title="Learning readiness" description="Personal models unlock as real outcomes accumulate." action={<Link to="/learning" className="text-xs font-medium text-content-tertiary hover:text-content-primary">Details</Link>} />
           <CardBody>
             {readiness.isLoading ? (
@@ -329,15 +347,19 @@ export function OverviewPage() {
             )}
           </CardBody>
         </Card>
+        </StaggerItem>
 
-        <Card>
+        <StaggerItem>
+        <Card hoverLift>
           <CardHeader icon={<Activity />} title="Recent activity" />
           <CardBody>
             {tasksQuery.isLoading ? <SkeletonRows rows={3} /> : <RecentActivity tasks={tasks} />}
           </CardBody>
         </Card>
+        </StaggerItem>
 
-        <Card>
+        <StaggerItem>
+        <Card hoverLift>
           <CardHeader icon={<CircleDot />} title="System pulse" action={<Link to="/system" className="text-xs font-medium text-content-tertiary hover:text-content-primary">Status</Link>} />
           <CardBody>
             <ul className="divide-y divide-border-subtle text-[13px] dark:divide-border">
@@ -355,7 +377,8 @@ export function OverviewPage() {
             </ul>
           </CardBody>
         </Card>
-      </div>
+        </StaggerItem>
+      </StaggerContainer>
 
       <FeedbackDialog task={feedbackTask} isOpen={feedbackTask !== null} onClose={() => setFeedbackTask(null)} />
     </Page>

@@ -12,10 +12,11 @@ import { normalizeErrorMessage, formatLocalTime } from "@/utils/formatters";
 import { humanize, num, rec, recs, str, type Rec } from "@/lib/data";
 import { priorityMeta } from "@/features/tasks/taskUtils";
 import { cn } from "@/lib/utils";
+import { JAMThinkingIndicator } from "@/components/motion";
 import { ProposalCard } from "./ProposalCard";
 
 function Surface({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("rounded-2xl border border-border bg-surface-1 p-4 shadow-card", className)}>{children}</div>;
+  return <div className={cn("rounded-2xl border border-border bg-surface-1 p-4 shadow-card transition-all duration-300 hover:border-content-muted/30 hover:shadow-lift", className)}>{children}</div>;
 }
 
 function TaskCreated({ result }: { result: Rec }) {
@@ -114,8 +115,13 @@ function Answer({ result }: { result: Rec }) {
 export function MessageView({ message, onRetry, onRefine, fromHistory }: { message: JamMessage; onRetry?: () => void; onRefine?: (text: string) => void; fromHistory?: boolean }) {
   if (message.role === "user") {
     return (
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary/[0.12] px-4 py-2.5 text-[14px] leading-relaxed text-content-primary dark:bg-primary/[0.14]">
+      <motion.div
+        initial={{ opacity: 0, y: 8, x: 8 }}
+        animate={{ opacity: 1, y: 0, x: 0 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="flex justify-end"
+      >
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary/[0.12] px-4 py-2.5 text-[14px] leading-relaxed text-content-primary shadow-sm transition-all duration-300 hover:bg-primary/[0.15] dark:bg-primary/[0.14] dark:hover:bg-primary/[0.18]">
           <p className="whitespace-pre-wrap">{message.command}</p>
           <p className="mt-1 text-right text-[10px] text-content-muted">{formatLocalTime(message.timestamp)}</p>
         </div>
@@ -131,8 +137,13 @@ export function MessageView({ message, onRetry, onRefine, fromHistory }: { messa
   const isAccepted = result.action === "plan_accepted";
 
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3">
-      <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl border border-border bg-surface-1">
+    <motion.div
+      initial={{ opacity: 0, y: 8, x: -8 }}
+      animate={{ opacity: 1, y: 0, x: 0 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className="flex gap-3"
+    >
+      <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl border border-border bg-surface-1 transition-transform duration-300 hover:scale-105">
         <HelioxMark className="size-5" animated={message.isPending} />
       </div>
       <div className="min-w-0 flex-1 space-y-2">
@@ -145,7 +156,7 @@ export function MessageView({ message, onRetry, onRefine, fromHistory }: { messa
           (() => {
             const n = normalizeErrorMessage(message.errorMessage, "JAM couldn't complete that command.");
             return (
-              <div role="alert" className="flex items-start gap-3 rounded-2xl border border-status-error/25 bg-status-error/[0.06] p-4">
+              <div role="alert" className="flex items-start gap-3 rounded-2xl border border-status-error/25 bg-status-error/[0.06] p-4 transition-all duration-300">
                 <OctagonAlert className="mt-0.5 size-4 shrink-0 text-status-error" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{n.title}</p>
@@ -156,14 +167,7 @@ export function MessageView({ message, onRetry, onRefine, fromHistory }: { messa
             );
           })()
         ) : message.isPending ? (
-          <div role="status" className="flex items-center gap-3 rounded-2xl border border-border bg-surface-1 px-4 py-3.5 text-[13px] text-content-secondary">
-            <span className="flex gap-1">
-              {[0, 1, 2].map((i) => (
-                <motion.span key={i} className="size-1.5 rounded-full bg-primary" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.18 }} />
-              ))}
-            </span>
-            Understanding your request and running the planning pipeline…
-          </div>
+          <JAMThinkingIndicator />
         ) : isAccepted ? (
           <PlanAccepted result={result} />
         ) : isProposal ? (
