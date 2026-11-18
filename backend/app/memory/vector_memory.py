@@ -156,6 +156,10 @@ class VectorMemorySystem:
         cls._logger.info("Starting one-time local-only embedding model initialization: model=%s", model_name)
         loader = cls.__new__(cls)
         loader.model_name = model_name
+        loader.storage_directory = Path(
+            os.getenv("HELIOX_VECTOR_MEMORY_DIR")
+            or Path(__file__).resolve().parents[2] / "artifacts" / "vector_memory"
+        )
         Thread(target=loader._load_model_and_publish, name="heliox-local-embedding-warmup", daemon=True).start()
 
     @classmethod
@@ -185,15 +189,54 @@ class VectorMemorySystem:
         )
         return model
 
+    def _find_local_model_path(self) -> Optional[str]:
+        if not self.model_name:
+            return None
+        clean_name = self.model_name.split("/")[-1]
+        
+        # 1. Local workspace / repository artifacts directory
+        storage_dir = getattr(self, "storage_directory", None) or (
+            Path(__file__).resolve().parents[2] / "artifacts" / "vector_memory"
+        )
+        artifact_paths = [
+            storage_dir / clean_name,
+            Path(__file__).resolve().parents[2] / "artifacts" / "vector_memory" / clean_name,
+        ]
+        for p in artifact_paths:
+            if p.exists() and (p / "modules.json").exists():
+                return str(p)
+
+        # 2. Local Hugging Face Hub snapshot directory
+        hub_snapshots = (
+            Path.home()
+            / ".cache"
+            / "huggingface"
+            / "hub"
+            / f"models--sentence-transformers--{clean_name}"
+            / "snapshots"
+        )
+        if hub_snapshots.exists():
+            for snap in sorted(hub_snapshots.iterdir(), reverse=True):
+                if snap.is_dir() and (snap / "modules.json").exists():
+                    return str(snap)
+
+        return None
+
     def _load_model_uncached(self) -> Optional[Any]:
         try:
             with redirect_stderr(io.StringIO()):
                 from sentence_transformers import SentenceTransformer
 
-                # Runtime request paths must never trigger a Hub lookup/retry.
-                # The project already has a deterministic local embedding
-                # fallback when this model is not cached on the machine.
-                return SentenceTransformer(self.model_name, local_files_only=True)
+                # Check if exact local snapshot directory exists first
+                local_dir = self._find_local_model_path()
+                if local_dir is not None:
+                    return SentenceTransformer(local_dir, local_files_only=True)
+
+                # Fallback to local cache lookup by name
+                try:
+                    return SentenceTransformer(f"sentence-transformers/{self.model_name}", local_files_only=True)
+                except Exception:
+                    return SentenceTransformer(self.model_name, local_files_only=True)
         except Exception:
             return None
 

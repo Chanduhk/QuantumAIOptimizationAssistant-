@@ -304,6 +304,8 @@ class PredictionEngine:
         self._validate_behavior_patterns(behavior_patterns)
         safe_duration = self._positive_finite_float(base_duration, field_name="duration")
         safe_productivity = self._normalize_prediction(predicted_productivity)
+
+        # Base ratio from behavior patterns
         if behavior_patterns.get("average_completion_time") is None:
             average_completion_ratio = 1.0
         else:
@@ -311,6 +313,21 @@ class PredictionEngine:
                 behavior_patterns["average_completion_time"],
                 field_name="average_completion_time",
             )
+
+        # Refine with trained DurationRatioModel when available in production
+        try:
+            from backend.app.ml.model_registry import get_model_registry
+            reg = get_model_registry()
+            dur_rec = reg.get_latest_model("DurationRatioModel")
+            if dur_rec and getattr(dur_rec.metadata, "status", None) == "production":
+                d_obj = dur_rec.model_object
+                if hasattr(d_obj, "predict_ratio"):
+                    model_ratio = d_obj.predict_ratio(safe_duration * 60.0)
+                    if 0.1 <= model_ratio <= 10.0:
+                        average_completion_ratio = float(model_ratio)
+        except Exception:
+            pass
+
         productivity_adjustment = max(0.65, 1.2 - (safe_productivity / 200.0))
         completion_time = max(0.25, safe_duration * average_completion_ratio * productivity_adjustment)
         return self._positive_finite_float(completion_time, field_name="completion_time_prediction")

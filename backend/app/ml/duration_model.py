@@ -138,6 +138,38 @@ class DurationRatioBaselineRegressor:
         # Duration ratio must be physically positive and reasonable
         return max(0.1, min(10.0, pred))
 
+    def predict_ratio(
+        self,
+        base_duration_minutes: float,
+        priority: int = 3,
+        task_type: str = "general",
+    ) -> float:
+        """Convenience method to predict duration ratio from basic task parameters."""
+        if not self.is_trained or self.model is None or self.scaler is None:
+            return 1.0
+
+        features = {
+            "estimated_duration_minutes": float(base_duration_minutes),
+            "priority": int(priority),
+            "task_type": str(task_type).strip().lower() or "general",
+            "prediction_hour": 10,
+            "prediction_day_of_week": 1,
+            "time_since_task_created_minutes": 0.0,
+            "scheduled_start_hour": 10.0,
+            "hours_until_scheduled_start": 0.0,
+            "prior_completed_task_count": 10,
+            "prior_duration_ratio_mean": 1.0,
+            "prior_duration_ratio_median": 1.0,
+            "prior_same_type_duration_ratio_mean": 1.0,
+        }
+        try:
+            features_df = pd.DataFrame([features])[list(FEATURE_NAMES)]
+            X = self._transform_features(features_df)
+            pred = float(self.model.predict(X)[0])
+            return max(0.1, min(10.0, pred))
+        except Exception:
+            return 1.0
+
     def evaluate(self, rows: Sequence[DatasetRow], *, train_rows: Optional[Sequence[DatasetRow]] = None) -> EvaluationReport:
         """Evaluate model performance on an holdout set without data leakage."""
         if not self.is_trained or self.model is None or self.scaler is None:

@@ -363,6 +363,7 @@ export function useCompleteTask() {
       queryClient.invalidateQueries({ queryKey: ["planning", userId] });
       queryClient.invalidateQueries({ queryKey: ["ml", "readiness"] });
       queryClient.invalidateQueries({ queryKey: ["ml", "status"] });
+      queryClient.invalidateQueries({ queryKey: ["ml", "training", "status"] });
       queryClient.invalidateQueries({ queryKey: ["learning"] });
     },
     onError: (error, { taskId }) => {
@@ -389,6 +390,7 @@ export function useSubmitTaskFeedback() {
       queryClient.invalidateQueries({ queryKey: ["tasks", taskId] });
       queryClient.invalidateQueries({ queryKey: ["ml", "readiness"] });
       queryClient.invalidateQueries({ queryKey: ["ml", "status"] });
+      queryClient.invalidateQueries({ queryKey: ["ml", "training", "status"] });
       queryClient.invalidateQueries({ queryKey: ["learning"] });
     },
   });

@@ -1,8 +1,8 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Boxes, ChevronDown, Database, HeartPulse, Search, Server, Wrench } from "lucide-react";
+import { Boxes, ChevronDown, Database, GraduationCap, HeartPulse, Search, Server, Wrench } from "lucide-react";
 import type { ComponentInventoryItem } from "@/api/endpoints";
-import { useComponentInventory, useMLModelStatus, useSystemHealth, useSystemStatus } from "@/api/hooks";
+import { useComponentInventory, useMLModelStatus, useMLReadiness, useMLTrainingStatus, useSystemHealth, useSystemStatus } from "@/api/hooks";
 import { Page, PageHeader } from "@/components/layout/Page";
 import { Card, CardBody, CardHeader, KeyValue } from "@/components/ui/Card";
 import { Badge, StatusDot } from "@/components/ui/Badge";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/Field";
 import { EmptyState, ErrorState, SkeletonRows } from "@/components/ui/Feedback";
 import { Segmented } from "@/components/ui/Tabs";
 import { Stat } from "@/components/ui/Stat";
+import { Meter } from "@/components/ui/Meter";
 import { LAYERS } from "@/lib/architecture";
 import { componentTone } from "@/lib/status";
 import { formatRelative } from "@/lib/format";
@@ -77,6 +78,102 @@ function ComponentRow({ c }: { c: ComponentInventoryItem }) {
   );
 }
 
+function ContinuousLearningCard() {
+  const trainingStatus = useMLTrainingStatus();
+  const readiness = useMLReadiness();
+
+  const autoData = (trainingStatus.data as Record<string, any> | undefined)?.automatic_learning;
+  const controllerStatus = (trainingStatus.data as Record<string, any> | undefined)?.controller_status ?? "idle";
+  const perModel = autoData?.per_model_readiness ?? {};
+
+  const dur = perModel.DurationRatioModel ?? readiness.data?.components?.DurationRatioModel;
+  const prod = perModel.ProductivityModel ?? readiness.data?.components?.ProductivityModel;
+  const rl = perModel.RLScheduler ?? readiness.data?.components?.RLScheduler;
+
+  const durEligible = dur?.eligible_samples ?? 0;
+  const durRequired = dur?.required_samples ?? 10;
+  const prodEligible = prod?.eligible_samples ?? 0;
+  const prodRequired = prod?.required_samples ?? 10;
+  const rlEligible = rl?.eligible_samples ?? 0;
+  const rlRequired = rl?.required_samples ?? 25;
+
+  const currentState = autoData?.current_state ?? controllerStatus ?? "idle";
+  const stateTone =
+    currentState === "training" || currentState === "running"
+      ? "warning"
+      : currentState === "promoted"
+      ? "success"
+      : currentState === "failed"
+      ? "error"
+      : "neutral";
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<GraduationCap />}
+        title="Continuous Learning Loop"
+        description="Autonomous background model governance — triggers automatically from verified task outcomes."
+        action={<Badge tone="quantum">Automatic</Badge>}
+      />
+      <CardBody className="space-y-4">
+        <div className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2 text-xs">
+          <span className="text-content-secondary">System State</span>
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            <StatusDot tone={stateTone} />
+            {humanize(currentState)}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-content-primary">Model Readiness & Thresholds</p>
+
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-content-secondary">
+              <span>Duration Ratio Model</span>
+              <span className="font-mono text-content-primary">{durEligible} / {durRequired}</span>
+            </div>
+            <Meter value={durEligible} max={durRequired} tone={durEligible >= durRequired ? "success" : "primary"} />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-content-secondary">
+              <span>Productivity Model (Feedback)</span>
+              <span className="font-mono text-content-primary">{prodEligible} / {prodRequired}</span>
+            </div>
+            <Meter value={prodEligible} max={prodRequired} tone={prodEligible >= prodRequired ? "success" : "quantum"} />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-content-secondary">
+              <span>RL Adherence Scheduler</span>
+              <span className="font-mono text-content-primary">{rlEligible} / {rlRequired}</span>
+            </div>
+            <Meter value={rlEligible} max={rlRequired} tone={rlEligible >= rlRequired ? "success" : "neutral"} />
+          </div>
+        </div>
+
+        {autoData?.last_verdict && (
+          <p className="rounded-lg bg-surface-2 p-2.5 text-xs text-content-secondary leading-relaxed">
+            <span className="font-medium text-content-primary">Active Verdict: </span>
+            {autoData.last_verdict}
+          </p>
+        )}
+
+        <div className="grid grid-cols-2 gap-2 text-[11px] text-content-muted">
+          <div>
+            <span className="text-content-tertiary">Last Check: </span>
+            {autoData?.last_check_timestamp ? formatRelative(autoData.last_check_timestamp) : "Initial"}
+          </div>
+          <div className="text-right">
+            <span className="text-content-tertiary">Last Training: </span>
+            {autoData?.last_training_timestamp ? formatRelative(autoData.last_training_timestamp) : "Pending"}
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
 export function SystemStatusPage() {
   const health = useSystemHealth();
   const status = useSystemStatus();
@@ -129,6 +226,7 @@ export function SystemStatusPage() {
         </Card>
 
         <div className="space-y-5">
+          <ContinuousLearningCard />
           <Card>
             <CardHeader icon={<HeartPulse />} title="Runtime metrics" description="Counters since the API process started." />
             <CardBody>

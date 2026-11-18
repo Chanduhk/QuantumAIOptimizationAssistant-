@@ -22,6 +22,39 @@ ACTUAL_DURATION_TOLERANCE_MINUTES = 1e-6
 
 _ENSURED_BINDS: set[int] = set()
 _SCHEMA_LOCK = threading.Lock()
+_EVENT_LISTENERS: list[Callable[[str, int, int], None]] = []
+_EVENT_LISTENERS_LOCK = threading.Lock()
+
+
+def register_task_event_listener(listener: Callable[[str, int, int], None]) -> None:
+    """Register a callback for task lifecycle events: (event_name, task_id, user_id)."""
+    with _EVENT_LISTENERS_LOCK:
+        if listener not in _EVENT_LISTENERS:
+            _EVENT_LISTENERS.append(listener)
+
+
+def unregister_task_event_listener(listener: Callable[[str, int, int], None]) -> None:
+    """Unregister a callback for task lifecycle events."""
+    with _EVENT_LISTENERS_LOCK:
+        if listener in _EVENT_LISTENERS:
+            _EVENT_LISTENERS.remove(listener)
+
+
+def clear_task_event_listeners() -> None:
+    """Clear all task event listeners (useful in tests)."""
+    with _EVENT_LISTENERS_LOCK:
+        _EVENT_LISTENERS.clear()
+
+
+def _dispatch_task_event(event_name: str, task_id: int, user_id: int) -> None:
+    with _EVENT_LISTENERS_LOCK:
+        listeners = list(_EVENT_LISTENERS)
+    for listener in listeners:
+        try:
+            listener(event_name, task_id, user_id)
+        except Exception:
+            # Defensive: ensure listener exceptions never break core lifecycle operations
+            pass
 
 
 def is_schema_ensured(bind: Any) -> bool:
@@ -237,6 +270,9 @@ class TaskLifecycleService:
 
         self.session.commit()
         self.session.refresh(task)
+        _dispatch_task_event("task_completed", task.id, task.user_id)
+        if task.productivity_rating is not None or task.focus_rating is not None or task.energy_rating is not None:
+            _dispatch_task_event("feedback_recorded", task.id, task.user_id)
         return task
 
     def record_feedback(
@@ -263,6 +299,7 @@ class TaskLifecycleService:
         task.feedback_submitted_at = timestamp
         self.session.commit()
         self.session.refresh(task)
+        _dispatch_task_event("feedback_recorded", task.id, task.user_id)
         return task
 
     def get_task(self, *, task_id: int, user_id: int | None = None) -> Task:

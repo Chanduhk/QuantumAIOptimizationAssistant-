@@ -13,7 +13,7 @@
   "val_records": 179,
   "test_records": 181,
   "sha256_checksum": "446026846b37d73800d1fd01b852ceaf95f086f15a626802d784154f63885bc2",
-  "download_timestamp_utc": "2026-10-31T16:03:43.059436+00:00",
+  "download_timestamp_utc": "2026-11-18T06:23:16.023011+00:00",
   "files": [
     "raw_garments_worker_productivity.csv",
     "train.csv",

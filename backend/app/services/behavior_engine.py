@@ -39,16 +39,23 @@ class BehaviorIntelligenceEngine:
             base_path.parent.glob(f"user_{user_id}_productivity_model_*.joblib"),
             reverse=True,
         ) if base_path.parent.exists() else []
-        candidate_paths = [*versioned, base_path]
+
+        data_artifacts_dir = Path(__file__).resolve().parents[3] / "data" / "model_artifacts"
+        alt_path = data_artifacts_dir / f"productivity_model_user_{user_id}.joblib"
+
+        candidate_paths = [*versioned, base_path, alt_path]
         for candidate in candidate_paths:
             if not candidate.exists():
                 continue
-            model = ProductivityModel(model_path=str(candidate))
-            if model.is_trained and model.compatibility_status == "OPTIMIZATION_COMPATIBLE":
-                self.productivity_model = model
-                return
+            try:
+                model = ProductivityModel(model_path=str(candidate))
+                if model.is_trained and model.compatibility_status == "OPTIMIZATION_COMPATIBLE":
+                    self.productivity_model = model
+                    return
+            except Exception:
+                continue
 
-        # Fall back to registered benchmark ProductivityModel if available
+        # Check registered model in ModelRegistry
         try:
             from backend.app.ml.model_registry import get_model_registry
             reg = get_model_registry()
@@ -59,7 +66,7 @@ class BehaviorIntelligenceEngine:
         except Exception:
             pass
 
-        benchmark_path = Path(__file__).resolve().parents[3] / "data" / "model_artifacts" / "productivity_benchmark_candidate_uci-garment-productivity.joblib"
+        benchmark_path = data_artifacts_dir / "productivity_benchmark_candidate_uci-garment-productivity.joblib"
         if benchmark_path.exists():
             try:
                 bm = ProductivityModel(model_path=str(benchmark_path))

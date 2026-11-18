@@ -34,7 +34,7 @@ class RLScheduler:
         )
         self.q_table: Dict[str, Dict[str, float]] = {}
         self.readiness_status = "NOT_READY_INSUFFICIENT_EPISODES"
-        if policy_path is not None:
+        if self.policy_path.exists():
             self._load_policy()
 
     def train_agent(

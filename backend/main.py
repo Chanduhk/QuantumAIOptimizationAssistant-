@@ -507,6 +507,11 @@ def startup() -> None:
 
     SystemComponentRegistry.get_instance().initialize_all()
 
+    from backend.app.learning.autonomous_learning import get_learning_coordinator
+    from backend.app.database.db import SessionLocal
+
+    get_learning_coordinator().initialize(db_session_factory=SessionLocal)
+
 
 def _auth_user_payload(user: User) -> AuthenticatedUserResponse:
     return AuthenticatedUserResponse(id=user.id, email=user.email, created_at=user.created_at)
@@ -1880,11 +1885,18 @@ def get_system_component_inventory() -> MultiEngineResponse:
 
 
 @app.get("/api/v1/ml/training/status", response_model=MultiEngineResponse)
-def get_ml_training_status() -> MultiEngineResponse:
+def get_ml_training_status(
+    authenticated_user: Optional[User] = Depends(enforce_authenticated_request),
+) -> MultiEngineResponse:
     from backend.app.ml.training_controller import get_training_controller
+    from backend.app.learning.autonomous_learning import get_learning_coordinator
 
     controller = get_training_controller()
-    return MultiEngineResponse(result=controller.get_status())
+    coord = get_learning_coordinator()
+    status_data = controller.get_status()
+    uid = authenticated_user.id if authenticated_user else None
+    status_data["automatic_learning"] = coord.get_learning_status(user_id=uid)
+    return MultiEngineResponse(result=status_data)
 
 
 @app.post("/api/v1/ml/training/trigger", response_model=MultiEngineResponse, status_code=202)

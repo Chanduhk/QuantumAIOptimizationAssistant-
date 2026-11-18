@@ -52,8 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Act & learn",
     items: [
-      { to: "/outcomes", label: "Outcomes", icon: Activity, layers: "L10 – L12", description: "Execution, actual outcomes and feedback" },
-      { to: "/learning", label: "Learning Loop", icon: GraduationCap, layers: "L13", description: "Model readiness, data quality and training" },
+      { to: "/outcomes", label: "Outcomes", icon: Activity, layers: "L10 – L13", description: "Execution, actual outcomes and feedback" },
     ],
   },
   {
@@ -90,5 +89,5 @@ export const LAYERS: ArchitectureLayer[] = [
   { n: 10, name: "Execution", summary: "Tasks started and in flight", route: "/tasks", components: [], stage: "learn" },
   { n: 11, name: "Actual Outcomes", summary: "Completed work vs estimates", route: "/outcomes", components: [], stage: "learn" },
   { n: 12, name: "Feedback", summary: "Focus, energy, productivity ratings", route: "/outcomes", components: [], stage: "learn" },
-  { n: 13, name: "Continuous Learning", summary: "Readiness, training, promotion", route: "/learning", components: ["training_controller", "public_dataset_manager"], stage: "learn" },
+  { n: 13, name: "Continuous Learning", summary: "Automatic readiness, training, promotion", route: "/system", components: ["training_controller", "public_dataset_manager"], stage: "learn" },
 ];

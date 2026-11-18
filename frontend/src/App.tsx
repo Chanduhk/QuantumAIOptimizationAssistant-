@@ -23,7 +23,6 @@ const OptimizationStudioPage = named(() => import("@/pages/OptimizationStudioPag
 const QuantumLabPage = named(() => import("@/pages/QuantumLabPage"), "QuantumLabPage");
 const ExecutiveBrainPage = named(() => import("@/pages/ExecutiveBrainPage"), "ExecutiveBrainPage");
 const OutcomesPage = named(() => import("@/pages/OutcomesPage"), "OutcomesPage");
-const LearningPage = named(() => import("@/pages/LearningPage"), "LearningPage");
 const SystemStatusPage = named(() => import("@/pages/SystemStatusPage"), "SystemStatusPage");
 const SettingsPage = named(() => import("@/pages/SettingsPage"), "SettingsPage");
 
@@ -123,14 +122,14 @@ const router = createBrowserRouter([
           { path: "quantum", element: page(QuantumLabPage) },
           { path: "brain", element: page(ExecutiveBrainPage) },
           { path: "outcomes", element: page(OutcomesPage) },
-          { path: "learning", element: page(LearningPage) },
+          { path: "learning", element: <Navigate to="/system" replace /> },
           { path: "system", element: page(SystemStatusPage) },
           { path: "settings", element: page(SettingsPage) },
           // Routes from the previous frontend keep working.
           { path: "planning", element: <Navigate to="/optimize" replace /> },
           { path: "optimization", element: <Navigate to="/optimize" replace /> },
           { path: "intelligence", element: <Navigate to="/insights" replace /> },
-          { path: "data-learning", element: <Navigate to="/learning" replace /> },
+          { path: "data-learning", element: <Navigate to="/system" replace /> },
           { path: "status", element: <Navigate to="/system" replace /> },
           { path: "*", element: <Navigate to="/" replace /> },
         ],

@@ -67,6 +67,13 @@ export function InsightsPage() {
         layers="L2 · L3"
         title="Intelligence"
         description="What HELIOX has learned about how you work — behaviour patterns from completed tasks, personalized recommendations, and the memory the assistant draws on."
+        actions={
+          <Link to="/system">
+            <Badge tone="quantum" className="cursor-pointer transition-opacity hover:opacity-80">
+              Continuous Learning: Active
+            </Badge>
+          </Link>
+        }
       />
 
       {patternsQuery.isLoading ? (

@@ -326,7 +326,7 @@ export function OverviewPage() {
       <StaggerContainer stagger={0.1} delay={0.4} className="grid gap-5 lg:grid-cols-3">
         <StaggerItem>
         <Card hoverLift>
-          <CardHeader icon={<GraduationCap />} title="Learning readiness" description="Personal models unlock as real outcomes accumulate." action={<Link to="/learning" className="text-xs font-medium text-content-tertiary hover:text-content-primary">Details</Link>} />
+          <CardHeader icon={<GraduationCap />} title="Learning readiness" description="Personal models unlock as real outcomes accumulate." action={<Link to="/system" className="text-xs font-medium text-content-tertiary hover:text-content-primary">Details</Link>} />
           <CardBody>
             {readiness.isLoading ? (
               <SkeletonRows rows={3} />

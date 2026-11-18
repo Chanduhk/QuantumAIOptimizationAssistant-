@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import logging
-from datetime import datetime
+import threading
+from datetime import datetime, timezone
+from enum import Enum
 from statistics import mean, pstdev
 from time import perf_counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -413,3 +416,295 @@ class AutonomousLearningLoop:
 
     def _model_name(self, user_id: int) -> str:
         return f"productivity_model_user_{user_id}"
+
+
+class LearningState(str, Enum):
+    IDLE = "idle"
+    DATA_PENDING = "data_pending"
+    CHECKING_READINESS = "checking_readiness"
+    WAITING_FOR_DATA = "waiting_for_sufficient_data"
+    QUEUED = "queued"
+    TRAINING = "training"
+    EVALUATING = "evaluating"
+    PROMOTED = "promoted"
+    CANDIDATE_REJECTED = "candidate_rejected"
+    FAILED = "failed"
+
+
+class AutomaticLearningCoordinator:
+    """Event-driven coordinator that automatically checks model readiness,
+    governs decoupled candidate training, evaluates metrics, and enforces
+    safe model promotion without manual user intervention.
+    """
+
+    def __init__(
+        self,
+        *,
+        training_controller=None,
+        db_session_factory=None,
+    ) -> None:
+        self._controller = training_controller
+        self._db_session_factory = db_session_factory
+        self._lock = threading.RLock()
+        self._state = LearningState.IDLE
+        self._pending_users: set[int] = set()
+        self._evaluating_users: set[int] = set()
+        self._user_fingerprints: dict[int, str] = {}
+        self._last_event: Optional[Dict[str, Any]] = None
+        self._last_check_timestamp: Optional[str] = None
+        self._last_training_timestamp: Optional[str] = None
+        self._last_verdict: Optional[str] = None
+        self._initialized = False
+        self._worker_thread: Optional[threading.Thread] = None
+
+    def initialize(self, db_session_factory: Optional[Callable[[], Session]] = None) -> None:
+        """Initialize event subscriptions and recover stale jobs."""
+        with self._lock:
+            if db_session_factory is not None:
+                self._db_session_factory = db_session_factory
+            if self._controller is None:
+                from backend.app.ml.training_controller import get_training_controller
+                self._controller = get_training_controller()
+
+            # Clean up interrupted jobs from previous server run
+            if self._controller is not None:
+                self._controller.recover_stale_jobs()
+
+            from backend.app.services.task_lifecycle_service import register_task_event_listener
+            register_task_event_listener(self.on_task_event)
+            self._initialized = True
+            logging.getLogger(__name__).info("AutomaticLearningCoordinator initialized and subscribed to TaskLifecycleService events.")
+            # Trigger background evaluation of existing database records
+            threading.Thread(target=self.evaluate_existing_users, daemon=True, name="AutomaticLearningStartupSweep").start()
+
+    def evaluate_existing_users(self) -> None:
+        """Scan existing database users for training readiness on startup."""
+        if self._db_session_factory is None:
+            return
+        session = self._db_session_factory()
+        try:
+            from backend.app.models.task import Task
+            user_ids = [
+                u_id for (u_id,) in session.query(Task.user_id).filter(Task.completed.is_(True)).distinct().all()
+            ]
+            with self._lock:
+                for uid in user_ids:
+                    self._pending_users.add(uid)
+                if self._pending_users:
+                    self._state = LearningState.DATA_PENDING
+                    if self._worker_thread is None or not self._worker_thread.is_alive():
+                        self._worker_thread = threading.Thread(
+                            target=self._run_event_processor,
+                            daemon=True,
+                            name="AutomaticLearningWorker",
+                        )
+                        self._worker_thread.start()
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Could not evaluate existing users on startup: %s", exc)
+        finally:
+            session.close()
+
+    def on_task_event(self, event_name: str, task_id: int, user_id: int) -> None:
+        """Handle incoming lifecycle events asynchronously without blocking the calling thread."""
+        with self._lock:
+            self._last_event = {
+                "event_name": event_name,
+                "task_id": task_id,
+                "user_id": user_id,
+                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            }
+            self._state = LearningState.DATA_PENDING
+            self._pending_users.add(user_id)
+
+            # Spawn or ensure background processor thread is running
+            if self._worker_thread is None or not self._worker_thread.is_alive():
+                self._worker_thread = threading.Thread(
+                    target=self._run_event_processor,
+                    daemon=True,
+                    name="AutomaticLearningWorker",
+                )
+                self._worker_thread.start()
+
+    def _run_event_processor(self) -> None:
+        """Background worker loop draining pending users and assessing readiness."""
+        while True:
+            user_id: Optional[int] = None
+            with self._lock:
+                if not self._pending_users:
+                    if self._state == LearningState.DATA_PENDING:
+                        self._state = LearningState.IDLE
+                    break
+                user_id = self._pending_users.pop()
+                self._evaluating_users.add(user_id)
+                self._state = LearningState.CHECKING_READINESS
+
+            try:
+                self._evaluate_and_train_user(user_id)
+            except Exception as exc:
+                logging.getLogger(__name__).exception("Error in AutomaticLearningCoordinator for user %s: %s", user_id, exc)
+                with self._lock:
+                    self._state = LearningState.FAILED
+                    self._last_verdict = f"Error during automated assessment: {exc}"
+            finally:
+                with self._lock:
+                    self._evaluating_users.discard(user_id)
+
+    def _evaluate_and_train_user(self, user_id: int) -> None:
+        """Assess readiness for user, check data fingerprint, and trigger training if eligible."""
+        if self._db_session_factory is None:
+            with self._lock:
+                self._last_verdict = "No database session factory configured for automatic learning."
+                self._state = LearningState.IDLE
+            return
+
+        from backend.app.ml.readiness import (
+            MINIMUM_TRAINING_ROWS,
+            MINIMUM_RL_EPISODES,
+            assess_duration_model_readiness,
+            assess_productivity_model_readiness,
+            assess_rl_scheduler_readiness,
+        )
+
+        session = self._db_session_factory()
+        try:
+            dur = assess_duration_model_readiness(session, user_id=user_id)
+            prod = assess_productivity_model_readiness(session, user_id=user_id)
+            rl = assess_rl_scheduler_readiness(session, user_id=user_id)
+
+            now_str = datetime.now(timezone.utc).isoformat()
+            with self._lock:
+                self._last_check_timestamp = now_str
+
+            # Compute data fingerprint for deduplication
+            fingerprint_payload = f"u:{user_id}:d:{dur.eligible_samples}:p:{prod.eligible_samples}:r:{rl.eligible_samples}"
+            fingerprint = hashlib.sha256(fingerprint_payload.encode()).hexdigest()
+
+            train_count = dur.details.get("train_partition_size", 0)
+            dur_ready = dur.status == "READY_FOR_TRAINING" or train_count >= MINIMUM_TRAINING_ROWS
+            prod_ready = prod.eligible_samples >= MINIMUM_TRAINING_ROWS
+            rl_ready = rl.eligible_samples >= MINIMUM_RL_EPISODES
+
+            if not (dur_ready or prod_ready or rl_ready):
+                with self._lock:
+                    self._state = LearningState.WAITING_FOR_DATA
+                    self._last_verdict = (
+                        f"Data accumulating: Duration ({dur.eligible_samples}/{MINIMUM_TRAINING_ROWS}), "
+                        f"Productivity ({prod.eligible_samples}/{MINIMUM_TRAINING_ROWS}), "
+                        f"RL ({rl.eligible_samples}/{MINIMUM_RL_EPISODES}). Waiting for training threshold."
+                    )
+                return
+
+            # Check if this exact data state was already trained
+            with self._lock:
+                if self._user_fingerprints.get(user_id) == fingerprint:
+                    self._state = LearningState.IDLE
+                    self._last_verdict = f"Identical dataset fingerprint ({fingerprint[:12]}) already trained; skipping redundant run."
+                    return
+                self._user_fingerprints[user_id] = fingerprint
+                self._state = LearningState.QUEUED
+                self._last_verdict = "Training threshold satisfied! Triggering automatic training."
+
+            # Trigger training through controller
+            if self._controller is not None:
+                try:
+                    job = self._controller.trigger_training(
+                        job_type="personalized",
+                        force=False,
+                        triggered_by=f"automatic_continuous_learning_user_{user_id}",
+                        user_id=user_id,
+                        db_session_factory=self._db_session_factory,
+                    )
+                    with self._lock:
+                        self._last_training_timestamp = now_str
+                        self._state = LearningState.TRAINING
+                        self._last_verdict = f"Automatic training job {job.job_id} launched for user {user_id}."
+                except RuntimeError as rexc:
+                    # Concurrency lock prevented duplicate run; acceptable
+                    with self._lock:
+                        self._last_verdict = f"Training already active: {rexc}"
+        finally:
+            session.close()
+
+    def get_learning_status(self, user_id: Optional[int] = None) -> Dict[str, Any]:
+        """Return the current continuous learning state and transparent readiness report."""
+        with self._lock:
+            readiness_data = {}
+            if self._db_session_factory is not None:
+                try:
+                    from backend.app.ml.readiness import (
+                        MINIMUM_TRAINING_ROWS,
+                        MINIMUM_RL_EPISODES,
+                        assess_duration_model_readiness,
+                        assess_productivity_model_readiness,
+                        assess_rl_scheduler_readiness,
+                    )
+                    sess = self._db_session_factory()
+                    try:
+                        dur = assess_duration_model_readiness(sess, user_id=user_id)
+                        prod = assess_productivity_model_readiness(sess, user_id=user_id)
+                        rl = assess_rl_scheduler_readiness(sess, user_id=user_id)
+                        readiness_data = {
+                            "DurationRatioModel": {
+                                "status": dur.status,
+                                "eligible_samples": dur.eligible_samples,
+                                "required_samples": MINIMUM_TRAINING_ROWS,
+                                "ready": dur.eligible_samples >= MINIMUM_TRAINING_ROWS,
+                                "next_requirement": f"Accumulate {max(0, MINIMUM_TRAINING_ROWS - dur.eligible_samples)} more completed tasks with actual duration.",
+                            },
+                            "ProductivityModel": {
+                                "status": prod.status,
+                                "eligible_samples": prod.eligible_samples,
+                                "required_samples": MINIMUM_TRAINING_ROWS,
+                                "ready": prod.eligible_samples >= MINIMUM_TRAINING_ROWS,
+                                "next_requirement": f"Submit {max(0, MINIMUM_TRAINING_ROWS - prod.eligible_samples)} more ratings (1-5) via task feedback.",
+                            },
+                            "RLScheduler": {
+                                "status": rl.status,
+                                "eligible_samples": rl.eligible_samples,
+                                "required_samples": MINIMUM_RL_EPISODES,
+                                "ready": rl.eligible_samples >= MINIMUM_RL_EPISODES,
+                                "next_requirement": f"Accumulate {max(0, MINIMUM_RL_EPISODES - rl.eligible_samples)} more schedule adherence episodes.",
+                            },
+                        }
+                    finally:
+                        sess.close()
+                except Exception:
+                    pass
+
+            return {
+                "learning_mode": "automatic",
+                "current_state": self._state.value,
+                "initialized": self._initialized,
+                "last_event": self._last_event,
+                "last_check_timestamp": self._last_check_timestamp,
+                "last_training_timestamp": self._last_training_timestamp,
+                "last_verdict": self._last_verdict or "Autonomous continuous learning active. Collecting eligible outcomes.",
+                "governance": {
+                    "automatic_continuous_learning": True,
+                    "manual_training_required": False,
+                    "user_isolated": True,
+                    "decoupled_models": True,
+                    "synthetic_promotion_forbidden": True,
+                },
+                "per_model_readiness": readiness_data,
+            }
+
+
+_SHARED_LEARNING_COORDINATOR: Optional[AutomaticLearningCoordinator] = None
+_COORDINATOR_LOCK = threading.RLock()
+
+
+def get_learning_coordinator() -> AutomaticLearningCoordinator:
+    """Return the shared singleton AutomaticLearningCoordinator instance."""
+    global _SHARED_LEARNING_COORDINATOR
+    with _COORDINATOR_LOCK:
+        if _SHARED_LEARNING_COORDINATOR is None:
+            _SHARED_LEARNING_COORDINATOR = AutomaticLearningCoordinator()
+        return _SHARED_LEARNING_COORDINATOR
+
+
+def reset_learning_coordinator() -> None:
+    """Reset the singleton coordinator (for isolated test environments)."""
+    global _SHARED_LEARNING_COORDINATOR
+    with _COORDINATOR_LOCK:
+        _SHARED_LEARNING_COORDINATOR = None
