@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Iterable, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Iterable, List, Optional
 
 from backend.app.domain.dependency_model import TaskDependency
 from backend.app.knowledge.dependency_graph import DependencyGraph
@@ -105,6 +106,138 @@ class DependencyIntelligenceEngine:
         if result["dependency_risk_score"] >= 40.0 and result.get("health_status") == "healthy":
             result["health_status"] = "at_risk"
         return result
+
+    def compute_downstream_slack_hours(
+        self, tasks: List[Dict[str, Any]], now: datetime | None = None
+    ) -> Dict[str, Optional[float]]:
+        """Calculate downstream slack buffer in hours for each task in the workload."""
+        now = now or datetime.now(timezone.utc)
+        normalized_tasks = self._validate_tasks(tasks)
+        self._load_inline_dependencies(normalized_tasks)
+
+        task_dict = {t["id"]: t for t in normalized_tasks}
+        deadlines: Dict[str, Optional[datetime]] = {}
+        durations_hours: Dict[str, float] = {}
+
+        for tid, t in task_dict.items():
+            dur_mins = float(t.get("estimated_duration") or 60.0)
+            unit = str(t.get("estimated_duration_unit", "minutes")).lower()
+            if unit in ("hours", "hour", "h"):
+                dur_hours = dur_mins
+            else:
+                dur_hours = dur_mins / 60.0
+            durations_hours[tid] = max(0.1, dur_hours)
+
+            raw_dl = t.get("deadline")
+            dl_dt = None
+            if raw_dl:
+                if isinstance(raw_dl, datetime):
+                    dl_dt = raw_dl if raw_dl.tzinfo else raw_dl.replace(tzinfo=timezone.utc)
+                elif isinstance(raw_dl, str) and raw_dl.strip():
+                    try:
+                        clean = raw_dl.replace("Z", "+00:00")
+                        dl_dt = datetime.fromisoformat(clean)
+                        if dl_dt.tzinfo is None:
+                            dl_dt = dl_dt.replace(tzinfo=timezone.utc)
+                    except Exception:
+                        dl_dt = None
+            deadlines[tid] = dl_dt
+
+        # Reverse topological order to propagate latest allowable finish backwards
+        order = self.dependency_graph.topological_sort()
+        reverse_order = list(reversed(order))
+
+        latest_finish: Dict[str, Optional[datetime]] = {}
+        for tid in reverse_order:
+            if tid not in task_dict:
+                continue
+            downstream = self.dependency_graph.get_dependents(tid)
+            candidate_finishes = []
+            if deadlines.get(tid):
+                candidate_finishes.append(deadlines[tid])
+
+            for dep in downstream:
+                dep_id = dep.task_id
+                if dep_id in latest_finish and latest_finish[dep_id] is not None:
+                    dep_start = latest_finish[dep_id] - timedelta(hours=durations_hours.get(dep_id, 1.0))
+                    candidate_finishes.append(dep_start)
+                elif deadlines.get(dep_id):
+                    dep_start = deadlines[dep_id] - timedelta(hours=durations_hours.get(dep_id, 1.0))
+                    candidate_finishes.append(dep_start)
+
+            if candidate_finishes:
+                latest_finish[tid] = min(candidate_finishes)
+            else:
+                latest_finish[tid] = None
+
+        slack_by_task: Dict[str, Optional[float]] = {}
+        for tid in task_dict:
+            lf = latest_finish.get(tid)
+            if lf is not None:
+                earliest_finish = now + timedelta(hours=durations_hours.get(tid, 1.0))
+                slack_secs = (lf - earliest_finish).total_seconds()
+                slack_by_task[tid] = round(slack_secs / 3600.0, 2)
+            else:
+                slack_by_task[tid] = None
+
+        return slack_by_task
+
+    def get_dependency_graph_topology(
+        self, tasks: List[Dict[str, Any]], now: datetime | None = None
+    ) -> Dict[str, Any]:
+        """Return full topology nodes, edges, critical path, bottlenecks, and slack."""
+        now = now or datetime.now(timezone.utc)
+        normalized_tasks = self._validate_tasks(tasks)
+        self._load_inline_dependencies(normalized_tasks)
+        completed_ids = self._completed_task_ids(normalized_tasks)
+        critical_path = self.dependency_graph.get_critical_path()
+        cycles = self.dependency_graph.detect_cycles()
+        bottlenecks = self.detect_bottlenecks()
+        slack_map = self.compute_downstream_slack_hours(normalized_tasks, now=now)
+
+        nodes = []
+        for task in normalized_tasks:
+            tid = task["id"]
+            blocked = self.dependency_graph.is_blocked(tid, completed_ids)
+            downstream_count = self._downstream_count(tid)
+            is_cp = tid in critical_path
+            slack = slack_map.get(tid)
+            nodes.append({
+                "id": tid,
+                "title": task.get("title", f"Task {tid}"),
+                "task_type": task.get("task_type", "general"),
+                "priority": task.get("priority", 3),
+                "completed": bool(task.get("completed")),
+                "is_blocked": blocked,
+                "blocking_count": downstream_count,
+                "is_critical_path": is_cp,
+                "downstream_slack_hours": slack,
+                "dependencies": self._inline_dependency_ids(task),
+            })
+
+        edges = []
+        for src_id, dep_list in self.dependency_graph.dependencies.items():
+            for dep in dep_list:
+                edges.append({
+                    "from": dep.depends_on_task_id,
+                    "to": dep.task_id,
+                    "type": dep.dependency_type,
+                })
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "critical_path": critical_path,
+            "critical_path_length": len(critical_path),
+            "cycles": cycles,
+            "bottlenecks": bottlenecks,
+            "summary": {
+                "total_nodes": len(nodes),
+                "total_edges": len(edges),
+                "blocked_nodes": sum(1 for n in nodes if n["is_blocked"]),
+                "critical_path_length": len(critical_path),
+            },
+        }
 
     def _load_inline_dependencies(self, tasks: List[Dict[str, Any]]) -> None:
         task_ids = {task["id"] for task in tasks}

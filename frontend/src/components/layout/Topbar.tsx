@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { Menu, Monitor, Moon, Search, Sparkles, Sun } from "lucide-react";
-import { useProviderStatus, useSystemHealth } from "@/api/hooks";
+import { useCurrentUser, useProviderStatus, useSystemHealth } from "@/api/hooks";
 import { useUIStore, type Theme } from "@/stores/uiStore";
 import { providerState } from "@/lib/status";
 import { Badge, Kbd, StatusDot } from "@/components/ui/Badge";
@@ -12,6 +12,7 @@ const themeIcon = { system: Monitor, dark: Moon, light: Sun } as const;
 
 export function Topbar() {
   const { setMobileNavOpen, setCommandPaletteOpen, theme, setTheme } = useUIStore();
+  const { data: user } = useCurrentUser();
   const health = useSystemHealth();
   const provider = useProviderStatus();
   const providerInfo = providerState(provider.data);
@@ -69,9 +70,15 @@ export function Topbar() {
         >
           <ThemeIcon />
         </Button>
-        <Link to="/assistant" className="hidden sm:block">
-          <Button size="sm" leftIcon={<Sparkles />}>Ask JAM</Button>
-        </Link>
+        {user ? (
+          <Link to="/assistant" className="hidden sm:block">
+            <Button size="sm" leftIcon={<Sparkles />}>Ask JAM</Button>
+          </Link>
+        ) : (
+          <Link to="/login" className="hidden sm:block">
+            <Button size="sm" variant="primary">Sign in</Button>
+          </Link>
+        )}
       </div>
     </header>
   );

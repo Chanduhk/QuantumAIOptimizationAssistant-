@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Dict, List
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,23 @@ class Recommendation:
     priority: int
     reason: str
     action: str
+
+
+@dataclass
+class ActionableProposal:
+    """Structured, executable recommendation proposal."""
+
+    proposal_id: str
+    category: str
+    title: str
+    reason: str
+    action_type: str
+    target_id: Optional[int]
+    impact_summary: str
+    payload: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 class RecommendationEngine:
@@ -35,12 +53,15 @@ class RecommendationEngine:
     async def generate_recommendations(self, user_id: int) -> Dict[str, Any]:
         """Orchestrate AI brain signals to produce a comprehensive recommendation response."""
         from backend.app.engines.brain_workflow import QuantumLifeBrain
+        from backend.app.models.goal import Goal
+        from backend.app.models.task import Task
+        from backend.app.services.goal_service import GoalService
+        from backend.app.services.task_lifecycle_service import TaskLifecycleService
 
         if not self.session:
             raise ValueError("Database session is required to generate recommendations.")
 
         brain = QuantumLifeBrain(session=self.session)
-        # plan_day is a synchronous operation
         context = {}
         evaluation = {}
         behavior_patterns = {}
@@ -53,14 +74,10 @@ class RecommendationEngine:
             behavior_patterns = plan_output.get("behavior_patterns", {})
             prioritized_tasks = plan_output.get("prioritized_tasks", [])
         except ValueError as exc:
-            # Handle empty tasks or other logical pipeline aborts cleanly
             if "No active tasks" not in str(exc):
                 raise
 
-        # Default forecast_score for daily generation
         forecast_score = 0.8
-
-        # Run pure engine recommendation generation
         recommendations = self.generate_daily_recommendations(
             context=context,
             evaluation=evaluation,
@@ -88,7 +105,6 @@ class RecommendationEngine:
 
         if not prioritized_tasks:
             behavioral_insights.append("You currently have no active tasks. Consider defining your goals for the day.")
-
         if not schedule_improvements:
             schedule_improvements.append("Schedule is optimal. No critical improvements needed.")
         if not goal_progress_alerts:
@@ -96,13 +112,181 @@ class RecommendationEngine:
         if not behavioral_insights:
             behavioral_insights.append("Focus on high-leverage tasks to maintain productivity.")
 
+        # --- Generate Structured Actionable Proposals ---
+        actionable_proposals: List[Dict[str, Any]] = []
+        task_service = TaskLifecycleService(self.session)
+        active_db_tasks = self.session.query(Task).filter(
+            Task.user_id == user_id,
+            Task.completed.is_(False),
+        ).all()
+        serialized_tasks = [task_service.serialize_task(t) for t in active_db_tasks]
+
+        goal_service = GoalService(self.session)
+        active_db_goals = goal_service.list_goals(user_id=user_id, status="active")
+
+        # 1. Dependency Unblock Proposal
+        bottleneck_tasks = [t for t in serialized_tasks if t.get("blocking_count", 0) > 0 and not t.get("is_blocked")]
+        if bottleneck_tasks:
+            top_bottleneck = max(bottleneck_tasks, key=lambda item: int(item.get("blocking_count", 0)))
+            b_count = int(top_bottleneck.get("blocking_count", 1))
+            actionable_proposals.append({
+                "proposal_id": f"unblock-{top_bottleneck['id']}",
+                "category": "dependency_unblock",
+                "title": f"Prioritize Key Blocker: {top_bottleneck['title']}",
+                "reason": f"Completing '{top_bottleneck['title']}' will immediately unblock {b_count} dependent task(s).",
+                "action_type": "prioritize_task",
+                "target_id": top_bottleneck["id"],
+                "impact_summary": f"Unblocks {b_count} dependent task(s)",
+                "payload": {"task_id": top_bottleneck["id"], "priority": 5},
+            })
+
+        # 2. Energy Reschedule Proposal
+        deep_work_types = {"coding", "programming", "architecture", "research", "design", "writing", "analysis"}
+        unscheduled_deep = [
+            t for t in serialized_tasks
+            if str(t.get("task_type", "")).lower() in deep_work_types
+            and not t.get("scheduled_start_time")
+            and not t.get("is_blocked")
+        ]
+        if unscheduled_deep:
+            target_deep = unscheduled_deep[0]
+            first_focus_hour = behavior_patterns.get("best_focus_hours", [9])[0] if behavior_patterns.get("best_focus_hours") else 9
+            now_utc = datetime.now(timezone.utc)
+            slot_dt = now_utc.replace(hour=first_focus_hour, minute=0, second=0, microsecond=0)
+            if slot_dt < now_utc:
+                slot_dt = slot_dt + timedelta(days=1)
+            actionable_proposals.append({
+                "proposal_id": f"energy-{target_deep['id']}",
+                "category": "energy_reschedule",
+                "title": f"Schedule '{target_deep['title']}' in Peak Window",
+                "reason": f"Aligns high-cognitive '{target_deep['task_type']}' task with your {first_focus_hour}:00 peak productivity window.",
+                "action_type": "reschedule_task",
+                "target_id": target_deep["id"],
+                "impact_summary": "Maximizes deep work focus and output",
+                "payload": {"task_id": target_deep["id"], "scheduled_start_time": slot_dt.isoformat()},
+            })
+
+        # 3. Goal Risk Mitigation Proposal
+        for g in active_db_goals:
+            analytics = goal_service.get_goal_analytics(g.id, user_id)
+            if analytics.get("health_status") in ("at_risk", "behind", "critical"):
+                actionable_proposals.append({
+                    "proposal_id": f"goal-mitigate-{g.id}",
+                    "category": "goal_risk_mitigation",
+                    "title": f"Protect Goal: {g.title}",
+                    "reason": f"Goal is currently {analytics.get('health_status')} with {analytics.get('days_needed')} days needed. Elevate priority of linked tasks.",
+                    "action_type": "boost_goal_tasks",
+                    "target_id": g.id,
+                    "impact_summary": f"Elevates all tasks for '{g.title}' to Priority 4+",
+                    "payload": {"goal_id": g.id, "boost_priority": 4},
+                })
+                break
+
+        # 4. Cognitive Workload & Energy Budgeting
+        deep_work_mins = sum(
+            float(t.get("estimated_duration") or 60.0)
+            for t in serialized_tasks
+            if str(t.get("task_type", "")).lower() in deep_work_types
+        )
+        sustainable_limit_mins = 240.0
+        utilization_pct = round((deep_work_mins / sustainable_limit_mins) * 100.0, 1)
+        fatigue_risk = "high" if deep_work_mins > 300.0 else "moderate" if deep_work_mins > 210.0 else "low"
+
+        if deep_work_mins > sustainable_limit_mins:
+            lowest_deep = min(
+                [t for t in serialized_tasks if str(t.get("task_type", "")).lower() in deep_work_types],
+                key=lambda x: int(x.get("priority", 3)),
+                default=None,
+            )
+            if lowest_deep:
+                actionable_proposals.append({
+                    "proposal_id": f"balance-workload-{lowest_deep['id']}",
+                    "category": "workload_balance",
+                    "title": "Rebalance Daily Cognitive Budget",
+                    "reason": f"Current deep work commitment ({round(deep_work_mins / 60.0, 1)}h) exceeds sustainable 4-hour limit.",
+                    "action_type": "reschedule_task",
+                    "target_id": lowest_deep["id"],
+                    "impact_summary": "Protects against cognitive fatigue and error rate spikes",
+                    "payload": {"task_id": lowest_deep["id"], "defer_days": 1},
+                })
+
+        cognitive_budget = {
+            "deep_work_minutes": round(deep_work_mins, 1),
+            "deep_work_hours": round(deep_work_mins / 60.0, 2),
+            "sustainable_limit_minutes": sustainable_limit_mins,
+            "sustainable_limit_hours": 4.0,
+            "cognitive_utilization_pct": min(200.0, utilization_pct),
+            "fatigue_risk": fatigue_risk,
+        }
+
         return {
             "focus_hours": focus_hours,
             "task_ordering": task_ordering,
             "schedule_improvements": schedule_improvements,
             "goal_progress_alerts": goal_progress_alerts,
             "behavioral_insights": behavioral_insights,
+            "actionable_proposals": actionable_proposals,
+            "cognitive_budget": cognitive_budget,
         }
+
+    def apply_proposal(
+        self,
+        user_id: int,
+        proposal_id: str,
+        action_type: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Execute an actionable recommendation proposal directly."""
+        from backend.app.models.task import Task
+        from backend.app.services.task_lifecycle_service import TaskLifecycleService
+
+        svc = TaskLifecycleService(session=self.session)
+
+        if action_type == "prioritize_task":
+            tid = int(payload.get("task_id", 0))
+            new_prio = int(payload.get("priority", 5))
+            updated = svc.update_task(task_id=tid, user_id=user_id, priority=new_prio)
+            return {"applied": True, "action_type": action_type, "task": svc.serialize_task(updated)}
+
+        if action_type == "reschedule_task":
+            tid = int(payload.get("task_id", 0))
+            sched_time_str = payload.get("scheduled_start_time")
+            defer_days = int(payload.get("defer_days", 0))
+
+            task = svc.get_task(task_id=tid, user_id=user_id)
+            new_start = None
+            if sched_time_str:
+                clean = sched_time_str.replace("Z", "+00:00")
+                new_start = datetime.fromisoformat(clean)
+            elif defer_days > 0:
+                base = task.scheduled_start_time or datetime.now(timezone.utc)
+                new_start = base + timedelta(days=defer_days)
+
+            updated = svc.update_task(
+                task_id=tid,
+                user_id=user_id,
+                scheduled_start_time=new_start,
+                reschedule_count=(task.reschedule_count or 0) + 1,
+            )
+            return {"applied": True, "action_type": action_type, "task": svc.serialize_task(updated)}
+
+        if action_type == "boost_goal_tasks":
+            gid = int(payload.get("goal_id", 0))
+            min_prio = int(payload.get("boost_priority", 4))
+            tasks = self.session.query(Task).filter(
+                Task.goal_id == gid,
+                Task.user_id == user_id,
+                Task.completed.is_(False),
+            ).all()
+            boosted_count = 0
+            for t in tasks:
+                if (t.priority or 0) < min_prio:
+                    t.priority = min_prio
+                    boosted_count += 1
+            self.session.commit()
+            return {"applied": True, "action_type": action_type, "goal_id": gid, "boosted_tasks_count": boosted_count}
+
+        raise ValueError(f"Unsupported proposal action_type: '{action_type}'")
 
     def generate_from_context(self, context: Any) -> List[Recommendation]:
         """

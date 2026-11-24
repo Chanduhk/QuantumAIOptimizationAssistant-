@@ -153,12 +153,35 @@ export interface UserBehaviorPatterns {
   average_duration_by_task_type?: Record<string, number>;
 }
 
+export interface ActionableProposal {
+  proposal_id: string;
+  category: "dependency_unblock" | "energy_reschedule" | "goal_risk_mitigation" | "workload_balance" | string;
+  title: string;
+  reason: string;
+  action_type: string;
+  target_id: number | null;
+  impact_summary: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CognitiveBudgetInfo {
+  deep_work_minutes: number;
+  deep_work_hours: number;
+  sustainable_limit_minutes: number;
+  sustainable_limit_hours: number;
+  cognitive_utilization_pct: number;
+  fatigue_risk: "low" | "moderate" | "high" | "extreme";
+  deep_work_task_count?: number;
+}
+
 export interface RecommendationResponse {
   focus_hours: string[];
   task_ordering: string[];
   schedule_improvements: string[];
   goal_progress_alerts: string[];
   behavioral_insights: string[];
+  actionable_proposals?: ActionableProposal[];
+  cognitive_budget?: CognitiveBudgetInfo;
 }
 
 export interface DataCollectionStatusResponse {
@@ -189,6 +212,16 @@ export interface LogoutResponse {
   logged_out: boolean;
 }
 
+export interface DeadlineRiskInfo {
+  risk_level: "none" | "low" | "moderate" | "high" | "overdue";
+  risk_score: number;
+  remaining_minutes: number | null;
+  predicted_duration_minutes: number;
+  is_overdue: boolean;
+  reasons: string[];
+  suggested_action?: string | null;
+}
+
 export interface Task {
   id: number;
   user_id: number;
@@ -203,6 +236,9 @@ export interface Task {
   created_at: string | null;
   start_time: string | null;
   end_time: string | null;
+  scheduled_start_time?: string | null;
+  scheduled_end_time?: string | null;
+  reschedule_count?: number;
   completed: boolean;
   lifecycle_state: string | null;
   outcome_valid: boolean | null;
@@ -214,7 +250,16 @@ export interface Task {
   deadline?: string | null;
   dependencies?: number[] | string[] | null;
   goal_id?: number | null;
+  goal_title?: string | null;
   context_info?: string | null;
+  deadline_risk?: DeadlineRiskInfo | null;
+  dynamic_priority?: number | null;
+  priority_breakdown?: Record<string, number> | null;
+  is_blocked?: boolean | null;
+  blocking_count?: number | null;
+  is_critical_path?: boolean | null;
+  downstream_slack_hours?: number | null;
+  recommended_action?: string | null;
 }
 
 export interface TaskCreateRequest {
@@ -229,6 +274,9 @@ export interface TaskCreateRequest {
   dependencies?: number[];
   goal_id?: number;
   context_info?: string;
+  scheduled_start_time?: string;
+  scheduled_end_time?: string;
+  reschedule_count?: number;
   created_at?: string;
 }
 
@@ -244,9 +292,50 @@ export interface TaskUpdateRequest {
   dependencies?: number[];
   goal_id?: number;
   context_info?: string;
+  scheduled_start_time?: string;
+  scheduled_end_time?: string;
+  reschedule_count?: number;
   clear_deadline?: boolean;
   clear_goal?: boolean;
   clear_dependencies?: boolean;
+  clear_schedule?: boolean;
+}
+
+export interface DailyWorkloadResponse {
+  date: string;
+  total_tasks: number;
+  today_tasks_count: number;
+  total_workload_hours: number;
+  completed_workload_hours: number;
+  remaining_workload_hours: number;
+  capacity_hours: number;
+  capacity_utilization_pct: number;
+  workload_status: "light" | "balanced" | "near_capacity" | "overloaded";
+  overdue_tasks_count: number;
+  high_risk_tasks_count: number;
+  upcoming_deadlines_count: number;
+  overdue_tasks: Array<Record<string, unknown>>;
+  high_risk_tasks: Array<Record<string, unknown>>;
+  upcoming_deadlines: Array<Record<string, unknown>>;
+  scheduled_timeline: Array<Record<string, unknown>>;
+  cognitive_budget?: CognitiveBudgetInfo;
+}
+
+export interface ScheduleAllocateRequest {
+  user_id: number;
+  task_ids?: number[];
+  day_start?: number;
+  day_end?: number;
+  apply?: boolean;
+}
+
+export interface ScheduleRescheduleRequest {
+  user_id: number;
+  affected_task_id?: number;
+  reason?: string;
+  day_start?: number;
+  day_end?: number;
+  auto_apply?: boolean;
 }
 
 export interface Goal {
@@ -262,6 +351,14 @@ export interface Goal {
   created_at?: string | null;
   updated_at?: string | null;
   task_count?: number;
+  completed_task_count?: number;
+  pending_task_count?: number;
+  health_status?: "on_track" | "at_risk" | "behind" | "critical" | "completed" | string | null;
+  health_score?: number | null;
+  target_date_feasible?: boolean | null;
+  projected_completion_date?: string | null;
+  remaining_duration_minutes?: number | null;
+  blocked_task_count?: number | null;
 }
 
 export interface GoalCreateRequest {
@@ -572,12 +669,26 @@ export const api = {
       apiClient.put<MultiEngineResponse>(`/api/v1/tasks/${taskId}`, data).then(res => res.data),
     delete: (taskId: number, userId: number) =>
       apiClient.delete<MultiEngineResponse>(`/api/v1/tasks/${taskId}`, { params: { user_id: userId } }).then(res => res.data),
+    dailyWorkload: (userId: number, targetDate?: string) =>
+      apiClient.get<MultiEngineResponse>("/api/v1/tasks/workload/daily", { params: { user_id: userId, target_date: targetDate } }).then(res => res.data.result as unknown as DailyWorkloadResponse),
+    prioritized: (userId: number) =>
+      apiClient.get<TaskListResponse>("/api/v1/tasks/prioritized", { params: { user_id: userId } }).then(res => res.data),
+    dependencyGraph: (userId: number) =>
+      apiClient.get<MultiEngineResponse>("/api/v1/tasks/dependencies/graph", { params: { user_id: userId } }).then(res => res.data.result),
+    allocateSchedule: (data: ScheduleAllocateRequest) =>
+      apiClient.post<MultiEngineResponse>("/api/v1/schedule/allocate", data).then(res => res.data.result),
+    rescheduleSchedule: (data: ScheduleRescheduleRequest) =>
+      apiClient.post<MultiEngineResponse>("/api/v1/schedule/reschedule", data).then(res => res.data.result),
   },
   goals: {
     list: (userId: number, status?: string) =>
       apiClient.get<GoalListResponse>("/api/v1/goals", { params: { user_id: userId, status } }).then(res => res.data),
     get: (goalId: number, userId: number) =>
       apiClient.get<GoalResponse>(`/api/v1/goals/${goalId}`, { params: { user_id: userId } }).then(res => res.data),
+    analytics: (goalId: number, userId: number) =>
+      apiClient.get<MultiEngineResponse>(`/api/v1/goals/${goalId}/analytics`, { params: { user_id: userId } }).then(res => res.data.result),
+    healthSummary: (userId: number) =>
+      apiClient.get<MultiEngineResponse>("/api/v1/goals/summary/health", { params: { user_id: userId } }).then(res => res.data.result),
     create: (data: GoalCreateRequest) =>
       apiClient.post<GoalResponse>("/api/v1/goals", data).then(res => res.data),
     update: (goalId: number, data: GoalUpdateRequest) =>
@@ -588,6 +699,8 @@ export const api = {
   ai: {
     recommendations: (userId: number, daysBack = 90) =>
       apiClient.get<RecommendationResponse>(`/api/v1/ai/recommendations/${userId}`, { params: { days_back: daysBack } }).then(res => res.data),
+    applyRecommendation: (data: { user_id: number; proposal_id: string; action_type: string; payload: Record<string, unknown> }) =>
+      apiClient.post<MultiEngineResponse>("/api/v1/ai/recommendations/apply", data).then(res => res.data.result),
     createExecutivePlan: (data: ExecutivePlanRequest) =>
       apiClient.post<ExecutivePlanResponse>("/api/v1/ai/executive-plan", data).then(res => res.data),
     command: (data: CommandRequest) =>

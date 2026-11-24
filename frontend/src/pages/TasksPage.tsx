@@ -11,6 +11,7 @@ import { Segmented } from "@/components/ui/Tabs";
 import { Stat } from "@/components/ui/Stat";
 import { EmptyState, ErrorState, SkeletonRows } from "@/components/ui/Feedback";
 import { TaskRow } from "@/features/tasks/TaskRow";
+import { DailyWorkloadDashboard } from "@/features/tasks/DailyWorkloadDashboard";
 import { TaskCreateDialog } from "@/features/tasks/TaskCreateDialog";
 import { TaskEditDialog } from "@/features/tasks/TaskEditDialog";
 import { FeedbackDialog } from "@/features/tasks/FeedbackDialog";
@@ -113,6 +114,8 @@ export function TasksPage() {
         <GoalList />
       ) : (
         <>
+          <DailyWorkloadDashboard onRefreshTasks={() => void refetch()} />
+
           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <Segmented<Filter>
               ariaLabel="Filter tasks"

@@ -128,7 +128,13 @@ export function AuthPage() {
             </p>
           </motion.div>
         </div>
-        <p className="text-center text-xs text-content-muted">Sessions use HttpOnly cookies with CSRF protection.</p>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-content-muted">
+          <span>HttpOnly & CSRF Protected</span>
+          <span>·</span>
+          <Link to="/about" className="hover:text-content-secondary transition-colors">About Heliox AI</Link>
+          <span>·</span>
+          <Link to="/terms" className="hover:text-content-secondary transition-colors">Terms & Conditions</Link>
+        </div>
       </section>
     </div>
   );

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional
 import time
@@ -217,6 +218,9 @@ class AIBrainController:
 
         if request.intent == "prioritize_tasks":
             from backend.app.services.task_lifecycle_service import TaskLifecycleService
+            from backend.app.services.goal_service import GoalService
+            from backend.app.engines.prioritization_engine import MultiCriteriaPrioritizer
+
             task_service = TaskLifecycleService(self.session)
             all_tasks = task_service.get_all_tasks(user_id=request.user_id)
             active_tasks = [t for t in all_tasks if not t.completed]
@@ -233,30 +237,26 @@ class AIBrainController:
                     trace=trace,
                     raw_result={"tasks": [], "executive_summary": summary}
                 )
-            active_serialized = [
-                {
-                    "id": t.id,
-                    "title": t.title,
-                    "task_type": t.task_type,
-                    "priority": t.priority,
-                    "estimated_duration": t.estimated_duration or 60.0,
-                    "estimated_duration_unit": t.estimated_duration_unit or "minutes",
-                    "estimated_duration_source": t.estimated_duration_source or "task_api",
-                }
-                for t in active_tasks
-            ]
+
+            serialized_active = [task_service.serialize_task(t) for t in active_tasks]
+            goal_service = GoalService(self.session)
+            active_goals = [goal_service.serialize_goal(g) for g in goal_service.list_goals(user_id=request.user_id, status="active")]
+
             behavior_engine = self.engine_registry.get_behavior_engine()
             behavior_engine.collect_behavior_data(user_id=request.user_id, days_back=self.days_back)
             behavior_patterns = behavior_engine.get_user_patterns() if hasattr(behavior_engine, "get_user_patterns") else {}
-            predicted_tasks = self.engine_registry.get_prediction_engine().predict_batch(
-                behavior_engine, active_serialized, behavior_patterns
+
+            prioritizer = MultiCriteriaPrioritizer()
+            prioritized = prioritizer.prioritize_workload(
+                tasks=serialized_active,
+                goals=active_goals,
+                behavior_patterns=behavior_patterns,
             )
-            prioritized = self.engine_registry.get_decision_engine().prioritize_tasks(
-                active_serialized, predicted_tasks, behavior_patterns
-            )
+
             trace.completed_at = time.time()
             trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
-            summary = f"Prioritized {len(prioritized)} active task(s) by priority and estimated outcome."
+            top_title = prioritized[0]["title"] if prioritized else "None"
+            summary = f"Prioritized {len(prioritized)} active task(s) using multi-criteria intelligence. Top focus: '{top_title}'."
             return BrainResponse(
                 success=True,
                 request_id=request.request_id,
@@ -270,6 +270,311 @@ class AIBrainController:
                     "total_pending": len(prioritized),
                     "executive_summary": summary,
                 }
+            )
+
+        if request.intent == "next_task":
+            from backend.app.services.task_lifecycle_service import TaskLifecycleService
+            task_service = TaskLifecycleService(self.session)
+            all_tasks = task_service.get_all_tasks(user_id=request.user_id)
+            active_tasks = [t for t in all_tasks if not t.completed]
+            if not active_tasks:
+                trace.completed_at = time.time()
+                trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
+                summary = "You have no active pending tasks! All scheduled work is completed."
+                return BrainResponse(
+                    success=True,
+                    request_id=request.request_id,
+                    intent=request.intent,
+                    executive_summary=summary,
+                    quantum_status=QuantumStatus.CLASSICAL_ONLY,
+                    trace=trace,
+                    raw_result={"task": None, "action": "none_pending", "executive_summary": summary},
+                )
+
+            completed_ids = {t.id for t in all_tasks if t.completed}
+            unblocked_tasks = []
+            for t in active_tasks:
+                deps = t.dependencies or []
+                if isinstance(deps, str):
+                    try:
+                        import json
+                        deps = json.loads(deps)
+                    except Exception:
+                        deps = []
+                if all(int(dep) in completed_ids for dep in deps if str(dep).isdigit()):
+                    unblocked_tasks.append(t)
+
+            candidate_pool = unblocked_tasks if unblocked_tasks else active_tasks
+            now = self.clock() if self.clock else datetime.now(timezone.utc).replace(tzinfo=None)
+
+            def candidate_sort_key(t):
+                dl_key = 999999.0
+                if t.deadline:
+                    dl_dt = t.deadline
+                    if dl_dt.tzinfo is not None:
+                        dl_dt = dl_dt.replace(tzinfo=None)
+                    diff_m = (dl_dt - now).total_seconds() / 60.0
+                    dl_key = diff_m
+                prio_key = -(t.priority or 3)
+                dur_key = t.estimated_duration or 60.0
+                return (dl_key, prio_key, dur_key)
+
+            candidate_pool.sort(key=candidate_sort_key)
+            best_task = candidate_pool[0]
+            serialized_best = task_service.serialize_task(best_task)
+
+            dl_text = ""
+            if best_task.deadline:
+                mins_left = (best_task.deadline.replace(tzinfo=None) - now).total_seconds() / 60.0
+                if mins_left < 0:
+                    dl_text = f" (OVERDUE by {int(abs(mins_left))}m)"
+                elif mins_left < 60:
+                    dl_text = f" (Due in {int(mins_left)}m)"
+                else:
+                    dl_text = f" (Due in {int(mins_left // 60)}h {int(mins_left % 60)}m)"
+
+            summary = (
+                f"The highest priority task to complete next is **{best_task.title}**"
+                f"{dl_text}. Priority: {best_task.priority}/5, estimated duration: {int(best_task.estimated_duration or 60)}m. "
+                f"It is unblocked and will yield the greatest productivity impact."
+            )
+            trace.completed_at = time.time()
+            trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
+            return BrainResponse(
+                success=True,
+                request_id=request.request_id,
+                intent=request.intent,
+                executive_summary=summary,
+                quantum_status=QuantumStatus.CLASSICAL_ONLY,
+                trace=trace,
+                raw_result={"task": serialized_best, "action": "next_task_recommended", "executive_summary": summary},
+            )
+
+        if request.intent == "deadline_risks":
+            from backend.app.services.task_lifecycle_service import TaskLifecycleService
+            from backend.app.engines.deadline_risk_engine import DeadlineRiskEngine
+            task_service = TaskLifecycleService(self.session)
+            all_tasks = task_service.get_all_tasks(user_id=request.user_id)
+            serialized = [task_service.serialize_task(t) for t in all_tasks]
+
+            risk_engine = DeadlineRiskEngine()
+            assessments = risk_engine.assess_all_tasks(serialized)
+            overdue_list = [a for a in assessments if a["risk_level"] == "overdue"]
+            high_risk_list = [a for a in assessments if a["risk_level"] == "high"]
+            moderate_list = [a for a in assessments if a["risk_level"] == "moderate"]
+
+            lines = []
+            if overdue_list:
+                lines.append(f"⚠️ **{len(overdue_list)} Overdue Task(s):**")
+                for item in overdue_list:
+                    reason = item["reasons"][0] if item.get("reasons") else "Deadline has passed"
+                    lines.append(f"• **{item['title']}** (Deadline: {item['deadline_iso']}) — {reason}")
+
+            if high_risk_list:
+                lines.append(f"🚨 **{len(high_risk_list)} High-Risk Task(s):**")
+                for item in high_risk_list:
+                    reason = item["reasons"][0] if item.get("reasons") else f"Risk score: {item['risk_score']:.0%}"
+                    lines.append(f"• **{item['title']}** — {reason}")
+
+            if not overdue_list and not high_risk_list:
+                summary = "All tasks are on track! There are no overdue or high-risk tasks in your workspace."
+            else:
+                summary = "\n".join(lines)
+
+            trace.completed_at = time.time()
+            trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
+            return BrainResponse(
+                success=True,
+                request_id=request.request_id,
+                intent=request.intent,
+                executive_summary=summary,
+                quantum_status=QuantumStatus.CLASSICAL_ONLY,
+                trace=trace,
+                raw_result={
+                    "overdue_tasks": overdue_list,
+                    "high_risk_tasks": high_risk_list,
+                    "moderate_risk_tasks": moderate_list,
+                    "total_at_risk": len(overdue_list) + len(high_risk_list),
+                    "executive_summary": summary,
+                },
+            )
+
+        if request.intent == "workload_query":
+            from backend.app.services.task_lifecycle_service import TaskLifecycleService
+            from backend.app.engines.deadline_risk_engine import DeadlineRiskEngine
+            task_service = TaskLifecycleService(self.session)
+            all_tasks = task_service.get_all_tasks(user_id=request.user_id)
+            serialized = [task_service.serialize_task(t) for t in all_tasks]
+
+            risk_engine = DeadlineRiskEngine()
+            workload = risk_engine.compute_daily_workload(user_id=request.user_id, tasks=serialized)
+
+            summary = (
+                f"Today's total workload is **{workload['total_workload_hours']:.1f} hours** across "
+                f"{workload['today_tasks_count']} task(s).\n"
+                f"• Completed: **{workload['completed_workload_hours']:.1f}h**\n"
+                f"• Remaining: **{workload['remaining_workload_hours']:.1f}h**\n"
+                f"• Capacity utilization: **{workload['capacity_utilization_pct']:.0f}%** ({workload['workload_status']})\n"
+                f"• Overdue tasks: {workload['overdue_tasks_count']}, High-risk: {workload['high_risk_tasks_count']}"
+            )
+            trace.completed_at = time.time()
+            trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
+            return BrainResponse(
+                success=True,
+                request_id=request.request_id,
+                intent=request.intent,
+                executive_summary=summary,
+                quantum_status=QuantumStatus.CLASSICAL_ONLY,
+                trace=trace,
+                raw_result={"workload": workload, "executive_summary": summary},
+            )
+
+        if request.intent == "feasibility_query":
+            from backend.app.services.task_lifecycle_service import TaskLifecycleService
+            from backend.app.engines.deadline_risk_engine import DeadlineRiskEngine
+            task_service = TaskLifecycleService(self.session)
+            all_tasks = task_service.get_all_tasks(user_id=request.user_id)
+            serialized = [task_service.serialize_task(t) for t in all_tasks]
+
+            risk_engine = DeadlineRiskEngine()
+            workload = risk_engine.compute_daily_workload(user_id=request.user_id, tasks=serialized)
+
+            rem = workload["remaining_workload_hours"]
+            cap = workload["capacity_hours"]
+            overdue = workload["overdue_tasks_count"]
+            high_risk = workload["high_risk_tasks_count"]
+
+            if overdue > 0:
+                summary = (
+                    f"⚠️ Deadline Feasibility: **At Risk**. You currently have {overdue} overdue task(s). "
+                    f"Immediate intervention is required to complete or reschedule them before continuing."
+                )
+            elif rem > cap:
+                summary = (
+                    f"⚠️ Deadline Feasibility: **Overloaded**. Your remaining workload of **{rem:.1f}h** "
+                    f"exceeds your available daily capacity of **{cap:.1f}h** ({workload['capacity_utilization_pct']:.0f}% utilization). "
+                    f"Consider rescheduling lower-priority tasks to avoid missing deadlines."
+                )
+            elif high_risk > 0:
+                summary = (
+                    f"⚡ Deadline Feasibility: **Tight**. You have {high_risk} high-risk task(s). "
+                    f"Workload is {rem:.1f}h out of {cap:.1f}h capacity. Meeting all deadlines is possible if you maintain focus on critical tasks."
+                )
+            else:
+                summary = (
+                    f"✅ Deadline Feasibility: **Feasible**. You have **{rem:.1f}h** of work remaining "
+                    f"within **{cap:.1f}h** available capacity ({workload['capacity_utilization_pct']:.0f}% utilization). "
+                    f"All pending tasks are on track to be completed before their deadlines."
+                )
+
+            trace.completed_at = time.time()
+            trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
+            return BrainResponse(
+                success=True,
+                request_id=request.request_id,
+                intent=request.intent,
+                executive_summary=summary,
+                quantum_status=QuantumStatus.CLASSICAL_ONLY,
+                trace=trace,
+                raw_result={"workload": workload, "is_feasible": (overdue == 0 and rem <= cap), "executive_summary": summary},
+            )
+
+        if request.intent == "blocking_tasks":
+            from backend.app.services.task_lifecycle_service import TaskLifecycleService
+            task_service = TaskLifecycleService(self.session)
+            all_tasks = task_service.get_all_tasks(user_id=request.user_id)
+            active_tasks = [t for t in all_tasks if not t.completed]
+
+            id_to_task = {t.id: t for t in all_tasks}
+            blocks_map = defaultdict(list)
+            for t in active_tasks:
+                deps = t.dependencies or []
+                if isinstance(deps, str):
+                    try:
+                        import json
+                        deps = json.loads(deps)
+                    except Exception:
+                        deps = []
+                for dep in deps:
+                    if str(dep).isdigit():
+                        dep_id = int(dep)
+                        dep_t = id_to_task.get(dep_id)
+                        if dep_t and not dep_t.completed:
+                            blocks_map[dep_id].append(t)
+
+            if not blocks_map:
+                summary = "There are currently no tasks blocking downstream work in your workspace. All pending tasks can be executed independently."
+            else:
+                lines = [f"Found {len(blocks_map)} task(s) currently blocking other work:"]
+                for dep_id, dependents in blocks_map.items():
+                    parent = id_to_task.get(dep_id)
+                    parent_title = parent.title if parent else f"Task {dep_id}"
+                    dep_titles = ", ".join([f"'{d.title}'" for d in dependents])
+                    lines.append(f"• **{parent_title}** blocks {len(dependents)} task(s): {dep_titles}")
+                lines.append("Completing these blocker tasks first will unblock the rest of your pipeline.")
+                summary = "\n".join(lines)
+
+            trace.completed_at = time.time()
+            trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
+            return BrainResponse(
+                success=True,
+                request_id=request.request_id,
+                intent=request.intent,
+                executive_summary=summary,
+                quantum_status=QuantumStatus.CLASSICAL_ONLY,
+                trace=trace,
+                raw_result={"blocking_tasks_count": len(blocks_map), "executive_summary": summary},
+            )
+
+        if request.intent == "reschedule_tasks":
+            from backend.app.services.task_lifecycle_service import TaskLifecycleService
+            from backend.app.services.plan_proposal_service import PlanProposalService
+            from backend.app.engines.scheduling_engine import SchedulingEngine
+
+            task_service = TaskLifecycleService(self.session)
+            all_tasks = task_service.get_all_tasks(user_id=request.user_id)
+            serialized = [task_service.serialize_task(t) for t in all_tasks]
+
+            scheduler = SchedulingEngine(session=self.session)
+            resched_res = scheduler.intelligent_reschedule(
+                user_id=request.user_id,
+                tasks=serialized,
+                reason="User requested rescheduling via JAM Assistant",
+            )
+
+            prop_svc = PlanProposalService(self.session, clock=self.clock)
+            proposal = prop_svc.create_proposal(
+                user_id=request.user_id,
+                schedule=resched_res.get("revised_schedule", []),
+                tasks=serialized,
+                goal_text="Intelligent rescheduling proposal",
+                constraints={"day_start": 8, "day_end": 20},
+                raw_result=resched_res,
+            )
+
+            shifted = resched_res.get("shifted_tasks_count", 0)
+            summary = (
+                f"I've computed an optimized non-overlapping schedule for your pending tasks.\n"
+                f"• {shifted} task(s) adjusted to avoid deadline conflicts.\n"
+                f"• Plan Proposal #{proposal.id[:8]} created in 'PROPOSED' state.\n"
+                f"Would you like me to confirm and apply this schedule to your workspace? Say 'Accept plan' or review it on the Tasks page."
+            )
+            trace.completed_at = time.time()
+            trace.total_duration_ms = (trace.completed_at - trace.started_at) * 1000
+            return BrainResponse(
+                success=True,
+                request_id=request.request_id,
+                intent=request.intent,
+                executive_summary=summary,
+                quantum_status=QuantumStatus.CLASSICAL_ONLY,
+                trace=trace,
+                raw_result={
+                    "proposal_id": proposal.id,
+                    "proposal_version": proposal.version,
+                    "revised_schedule": resched_res.get("revised_schedule", []),
+                    "action": "reschedule_proposed",
+                    "executive_summary": summary,
+                },
             )
 
         if request.intent == "accept_plan":
@@ -349,7 +654,6 @@ class AIBrainController:
                 )
             from backend.app.models.task import Task
             from backend.app.services.task_lifecycle_service import TaskLifecycleService
-            from datetime import datetime, timezone
             task_service = TaskLifecycleService(self.session, clock=self.clock)
             ref_dt = self.clock() if self.clock else datetime.now(timezone.utc).replace(tzinfo=None)
             now = ref_dt.replace(minute=0, second=0, microsecond=0)

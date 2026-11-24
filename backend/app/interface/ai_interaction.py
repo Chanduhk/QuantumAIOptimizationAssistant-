@@ -121,6 +121,72 @@ class AIInteractionLayer:
            re.search(r"\badjust(?:\s+the)?\s+plan\b", normalized):
             return "refine_plan"
 
+        # Intelligent Deadline & Time Management intents
+        if any(keyword in normalized for keyword in (
+            "which task should i complete next",
+            "what should i complete next",
+            "what task next",
+            "what to do next",
+            "which task next",
+            "what should i do next",
+            "which task to do next",
+            "next task",
+        )):
+            return "next_task"
+
+        if any(keyword in normalized for keyword in (
+            "which tasks are at risk of missing deadlines",
+            "which tasks are at risk",
+            "tasks at risk of missing deadlines",
+            "tasks at risk",
+            "deadline risk",
+            "risk of missing deadlines",
+            "miss any deadline",
+            "which tasks might be late",
+            "at risk of missing",
+        )):
+            return "deadline_risks"
+
+        if any(keyword in normalized for keyword in (
+            "how much work do i have today",
+            "what is my workload today",
+            "how much work today",
+            "today's workload",
+            "todays workload",
+            "my workload today",
+            "how much work do i have",
+        )):
+            return "workload_query"
+
+        if any(keyword in normalized for keyword in (
+            "can i finish all my tasks before their deadlines",
+            "can i finish on time",
+            "will i meet my deadlines",
+            "is my schedule feasible",
+            "can i finish all my tasks",
+            "can i finish before deadline",
+            "can i finish before their deadlines",
+        )):
+            return "feasibility_query"
+
+        if any(keyword in normalized for keyword in (
+            "which tasks are blocking other tasks",
+            "what tasks are blocking",
+            "blocking tasks",
+            "which tasks are blocking",
+            "tasks blocking other tasks",
+            "which task is blocking",
+        )):
+            return "blocking_tasks"
+
+        if any(keyword in normalized for keyword in (
+            "reschedule my remaining tasks",
+            "reschedule remaining tasks",
+            "reschedule my tasks",
+            "reschedule pending tasks",
+        )):
+            return "reschedule_tasks"
+
         if any(keyword in normalized for keyword in ("learn", "retrain", "update model", "improve model")):
             return "run_learning_cycle"
         if any(keyword in normalized for keyword in ("recommend", "suggest", "insight")):

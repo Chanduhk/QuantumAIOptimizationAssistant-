@@ -2,7 +2,10 @@ import * as React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { AlarmClock, BrainCircuit, Database, Flame, Gauge, Lightbulb, ListOrdered, Route, Sparkles, Target, Zap } from "lucide-react";
-import { useAIContext, useBehaviorPatterns, useRecommendations } from "@/api/hooks";
+import { useAIContext, useApplyRecommendation, useBehaviorPatterns, useRecommendations } from "@/api/hooks";
+import { useUserStore } from "@/stores/userStore";
+import { toast } from "@/components/ui/Toaster";
+import type { ActionableProposal } from "@/api/endpoints";
 import { Page, PageHeader } from "@/components/layout/Page";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -42,11 +45,34 @@ function RecommendationGroup({ icon: Icon, title, items, tone }: { icon: React.E
 }
 
 export function InsightsPage() {
+  const userId = useUserStore((state) => state.userId);
   const patternsQuery = useBehaviorPatterns();
   const patterns = patternsQuery.data?.patterns ?? null;
   const hasData = Boolean(patterns && (patterns.tasks_analyzed ?? 0) > 0);
   const recsQuery = useRecommendations(90, hasData);
   const contextQuery = useAIContext(hasData);
+  const applyMutation = useApplyRecommendation();
+
+  const handleApplyProposal = (p: ActionableProposal) => {
+    if (userId === null) return;
+    applyMutation.mutate(
+      {
+        user_id: userId,
+        proposal_id: p.proposal_id,
+        action_type: p.action_type,
+        payload: p.payload,
+      },
+      {
+        onSuccess: () => {
+          toast("success", "Recommendation Applied", `Applied "${p.title}" successfully.`);
+          recsQuery.refetch();
+        },
+        onError: (err: any) => {
+          toast("error", "Failed to Apply", err?.message || "Could not apply recommendation.");
+        },
+      }
+    );
+  };
 
   const hourly = Object.entries(patterns?.hourly_productivity ?? {})
     .map(([h, v]) => ({ hour: Number(h), value: v }))
@@ -146,12 +172,85 @@ export function InsightsPage() {
               ) : !recsQuery.data ? (
                 <EmptyState compact title="No recommendations yet" />
               ) : (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <RecommendationGroup icon={AlarmClock} title="Focus windows" items={recsQuery.data.focus_hours.map((h) => `Protect ${h} for deep work`)} tone="bg-primary/10 text-primary" />
-                  <RecommendationGroup icon={ListOrdered} title="Suggested task order" items={recsQuery.data.task_ordering.map((t, i) => `${i + 1}. ${t}`)} tone="bg-quantum/10 text-quantum" />
-                  <RecommendationGroup icon={Sparkles} title="Behavioural insights" items={recsQuery.data.behavioral_insights} tone="bg-status-success/10 text-status-success" />
-                  <RecommendationGroup icon={Route} title="Schedule improvements" items={recsQuery.data.schedule_improvements} tone="bg-surface-3 text-content-secondary" />
-                  <RecommendationGroup icon={Target} title="Goal progress" items={recsQuery.data.goal_progress_alerts} tone="bg-status-warning/10 text-status-warning" />
+                <div className="space-y-4">
+                  {/* Actionable Proposals Section */}
+                  {recsQuery.data.actionable_proposals && recsQuery.data.actionable_proposals.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-primary">
+                          Actionable AI Proposals (One-Click Optimization)
+                        </span>
+                        <Badge tone="primary" className="text-[10px]">
+                          {recsQuery.data.actionable_proposals.length} available
+                        </Badge>
+                      </div>
+                      <div className="grid gap-2.5 sm:grid-cols-2">
+                        {recsQuery.data.actionable_proposals.map((p) => (
+                          <div
+                            key={p.proposal_id}
+                            className="flex flex-col justify-between rounded-xl border border-primary/20 bg-primary/5 p-3.5 transition-colors hover:border-primary/40"
+                          >
+                            <div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-content-primary">{p.title}</span>
+                                <Badge tone="primary" className="text-[10px] capitalize">
+                                  {p.category.replace("_", " ")}
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-xs text-content-secondary">{p.reason}</p>
+                              <p className="mt-1 text-[11px] font-medium text-primary">{p.impact_summary}</p>
+                            </div>
+                            <div className="mt-3 flex justify-end">
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={() => handleApplyProposal(p)}
+                                isLoading={applyMutation.isPending}
+                              >
+                                Apply Action
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cognitive Budget Banner */}
+                  {recsQuery.data.cognitive_budget && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-subtle bg-surface-2 p-3 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Zap className="size-4 text-quantum" />
+                        <div>
+                          <span className="font-semibold text-content-primary">Cognitive Energy Utilization:</span>{" "}
+                          <span className="text-content-secondary">
+                            {recsQuery.data.cognitive_budget.deep_work_hours}h / {recsQuery.data.cognitive_budget.sustainable_limit_hours}h sustainable limit
+                          </span>
+                        </div>
+                      </div>
+                      <Badge
+                        tone={
+                          recsQuery.data.cognitive_budget.fatigue_risk === "high"
+                            ? "error"
+                            : recsQuery.data.cognitive_budget.fatigue_risk === "moderate"
+                            ? "warning"
+                            : "success"
+                        }
+                        className="capitalize text-[10px]"
+                      >
+                        Fatigue Risk: {recsQuery.data.cognitive_budget.fatigue_risk}
+                      </Badge>
+                    </div>
+                  )}
+
+                  {/* Grouped Recommendation Signals */}
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <RecommendationGroup icon={AlarmClock} title="Focus windows" items={recsQuery.data.focus_hours.map((h) => `Protect ${h} for deep work`)} tone="bg-primary/10 text-primary" />
+                    <RecommendationGroup icon={ListOrdered} title="Suggested task order" items={recsQuery.data.task_ordering.map((t, i) => `${i + 1}. ${t}`)} tone="bg-quantum/10 text-quantum" />
+                    <RecommendationGroup icon={Sparkles} title="Behavioural insights" items={recsQuery.data.behavioral_insights} tone="bg-status-success/10 text-status-success" />
+                    <RecommendationGroup icon={Route} title="Schedule improvements" items={recsQuery.data.schedule_improvements} tone="bg-surface-3 text-content-secondary" />
+                    <RecommendationGroup icon={Target} title="Goal progress" items={recsQuery.data.goal_progress_alerts} tone="bg-status-warning/10 text-status-warning" />
+                  </div>
                 </div>
               )}
             </CardBody>

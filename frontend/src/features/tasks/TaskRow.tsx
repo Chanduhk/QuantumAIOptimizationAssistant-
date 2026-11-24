@@ -1,6 +1,6 @@
 import * as React from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, Calendar, CheckCheck, Clock3, Link2, MessageSquarePlus, Pencil, Play, Star, Target } from "lucide-react";
+import { AlertCircle, AlertTriangle, Calendar, CheckCheck, Clock3, Link2, MessageSquarePlus, Pencil, Play, RotateCcw, Star, Target, Timer } from "lucide-react";
 import type { Task, Goal } from "@/api/endpoints";
 import { isAlreadyCompletedError, isAlreadyStartedError, useCompleteTask, useStartTask } from "@/api/hooks";
 import { getApiErrorMessage } from "@/api/client";
@@ -10,7 +10,17 @@ import { toast } from "@/components/ui/Toaster";
 import { formatDuration } from "@/utils/formatters";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { durationRatio, elapsedMinutes, hasFeedback, lifecycle, LIFECYCLE_META, priorityMeta } from "./taskUtils";
+import {
+  durationRatio,
+  elapsedMinutes,
+  formatDeadlineCountdown,
+  formatScheduledSlot,
+  getTaskRiskMeta,
+  hasFeedback,
+  lifecycle,
+  LIFECYCLE_META,
+  priorityMeta,
+} from "./taskUtils";
 
 function useNow(intervalMs: number, enabled: boolean) {
   const [now, setNow] = React.useState(() => Date.now());
@@ -81,13 +91,16 @@ export function TaskRow({ task, onRequestFeedback, onEdit, goal, allTasks, compa
   const elapsed = state === "started" ? elapsedMinutes(task, now) : null;
   const rated = hasFeedback(task);
 
-  // Deadline & Overdue calculation
+  // Deadline & Countdown calculation
   const deadlineDt = task.deadline ? new Date(task.deadline) : null;
   const isOverdue =
     deadlineDt !== null &&
     !isNaN(deadlineDt.getTime()) &&
     state !== "completed" &&
     deadlineDt.getTime() < now;
+  const countdown = formatDeadlineCountdown(task.deadline, now);
+  const scheduledSlot = formatScheduledSlot(task.scheduled_start_time, task.scheduled_end_time);
+  const riskMeta = getTaskRiskMeta(task, isOverdue);
 
   // Dependencies check
   const dependencyIds = React.useMemo(() => {
@@ -134,22 +147,80 @@ export function TaskRow({ task, onRequestFeedback, onEdit, goal, allTasks, compa
             </Badge>
           )}
 
-          {/* Deadline / Overdue badge */}
-          {deadlineDt && (
+          {/* Scheduled time slot badge */}
+          {scheduledSlot && (
+            <Badge tone="primary" className="inline-flex items-center gap-1 text-[11px] font-mono bg-sky-500/10 text-sky-400 border-sky-500/30">
+              <Clock3 className="size-2.5" />
+              {scheduledSlot}
+            </Badge>
+          )}
+
+          {/* Deadline risk indicator (Green/Amber/Red/Blue) */}
+          {riskMeta.level !== "none" && state !== "completed" && (
             <Badge
-              tone={isOverdue ? "error" : "neutral"}
-              className={cn("inline-flex items-center gap-1 text-[11px]", isOverdue && "font-semibold")}
+              tone={riskMeta.tone}
+              className={cn("inline-flex items-center gap-1 text-[11px] font-medium border", riskMeta.badgeClass)}
+              title={task.deadline_risk?.reasons?.[0] || riskMeta.label}
             >
-              {isOverdue ? <AlertCircle className="size-2.5" /> : <Calendar className="size-2.5" />}
-              {isOverdue ? "Overdue" : `Due ${formatRelative(task.deadline)}`}
+              {riskMeta.level === "overdue" || riskMeta.level === "high" ? (
+                <AlertCircle className="size-2.5" />
+              ) : riskMeta.level === "moderate" ? (
+                <AlertTriangle className="size-2.5" />
+              ) : (
+                <Timer className="size-2.5" />
+              )}
+              {riskMeta.label}
+            </Badge>
+          )}
+
+          {/* Live Deadline & Countdown badge */}
+          {countdown && (
+            <Badge
+              tone={countdown.isOverdue ? "error" : "neutral"}
+              className={cn(
+                "inline-flex items-center gap-1 text-[11px]",
+                countdown.isOverdue ? "font-semibold text-red-400 bg-red-500/10 border-red-500/30" : "text-content-secondary"
+              )}
+              title={`Deadline: ${countdown.formattedDeadline}`}
+            >
+              <Calendar className="size-2.5" />
+              <span>{countdown.countdownText}</span>
+              <span className="text-[10px] opacity-70">({countdown.formattedDeadline})</span>
+            </Badge>
+          )}
+
+          {/* Dynamic Priority Score */}
+          {task.dynamic_priority != null && state !== "completed" && (
+            <Badge
+              tone={task.dynamic_priority >= 70 ? "primary" : task.dynamic_priority >= 45 ? "warning" : "neutral"}
+              className="inline-flex items-center gap-1 text-[10px] font-mono"
+              title={task.recommended_action || `Dynamic Priority: ${task.dynamic_priority}/100`}
+            >
+              <span>Score: {task.dynamic_priority}</span>
+            </Badge>
+          )}
+
+          {/* Reschedule count indicator */}
+          {task.reschedule_count != null && task.reschedule_count > 0 && (
+            <Badge tone="outline" className="inline-flex items-center gap-1 text-[10px] text-content-tertiary" title="Intelligently rescheduled">
+              <RotateCcw className="size-2.5" />
+              {task.reschedule_count}×
             </Badge>
           )}
 
           {/* Dependency status badge */}
-          {hasIncompleteDependencies && state !== "completed" && (
-            <Badge tone="warning" className="inline-flex items-center gap-1 text-[11px]">
+          {(task.is_blocked || hasIncompleteDependencies) && state !== "completed" && (
+            <Badge tone="error" className="inline-flex items-center gap-1 text-[10px] bg-red-500/10 text-red-400 border-red-500/30">
               <Link2 className="size-2.5" />
-              Blocked by prereq
+              Blocked
+            </Badge>
+          )}
+
+          {/* Bottleneck badge (blocks downstream tasks) */}
+          {task.blocking_count != null && task.blocking_count > 0 && state !== "completed" && (
+            <Badge tone="warning" className="inline-flex items-center gap-1 text-[10px]" title={`Completing this unblocks ${task.blocking_count} dependent task(s)`}>
+              <Link2 className="size-2.5" />
+              Blocks {task.blocking_count}
             </Badge>
           )}
         </div>

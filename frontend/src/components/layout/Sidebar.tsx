@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { LogIn, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NAV_GROUPS } from "@/lib/architecture";
 import { useUIStore } from "@/stores/uiStore";
 import { useCurrentUser, CURRENT_USER_QUERY_KEY } from "@/api/hooks";
@@ -82,6 +82,24 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
     queryClient.setQueryData(CURRENT_USER_QUERY_KEY, null);
     navigate("/login", { replace: true });
   };
+
+  if (!user) {
+    return (
+      <div className={cn("border-t border-border-subtle p-3 dark:border-border", collapsed && "px-2")}>
+        <NavLink
+          to="/login"
+          className={cn(
+            "flex items-center gap-2.5 rounded-xl border border-primary/25 bg-primary/10 p-2 text-[13px] font-medium text-primary hover:bg-primary/20 transition-colors",
+            collapsed ? "justify-center px-0" : "px-3"
+          )}
+          title={collapsed ? "Sign In" : undefined}
+        >
+          <LogIn className="size-4 shrink-0" />
+          {!collapsed && <span>Sign In</span>}
+        </NavLink>
+      </div>
+    );
+  }
 
   const initial = user?.email?.charAt(0).toUpperCase() ?? "?";
   return (

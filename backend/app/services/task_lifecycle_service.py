@@ -96,6 +96,9 @@ class TaskLifecycleService:
         goal_id: int | None = None,
         context_info: str | None = None,
         created_at: datetime | None = None,
+        scheduled_start_time: datetime | None = None,
+        scheduled_end_time: datetime | None = None,
+        reschedule_count: int | None = 0,
     ) -> Task:
         """Create a task with prediction-time fields and optional goal/deadline/dependency relationships."""
 
@@ -122,6 +125,9 @@ class TaskLifecycleService:
             actual_duration=None,
             start_time=None,
             end_time=None,
+            scheduled_start_time=scheduled_start_time,
+            scheduled_end_time=scheduled_end_time,
+            reschedule_count=int(reschedule_count or 0),
             completed=False,
             created_at=timestamp,
             lifecycle_state=TASK_STATE_CREATED,
@@ -147,9 +153,13 @@ class TaskLifecycleService:
         dependencies: list[Any] | None = None,
         goal_id: int | None = None,
         context_info: str | None = None,
+        scheduled_start_time: datetime | None = None,
+        scheduled_end_time: datetime | None = None,
+        reschedule_count: int | None = None,
         clear_deadline: bool = False,
         clear_goal: bool = False,
         clear_dependencies: bool = False,
+        clear_schedule: bool = False,
     ) -> Task:
         """Update fields on an existing task with user isolation and dependency cycle checks."""
         task = self._get_task(task_id=task_id, user_id=user_id)
@@ -184,6 +194,18 @@ class TaskLifecycleService:
 
         if context_info is not None:
             task.context_info = str(context_info).strip()
+
+        if clear_schedule:
+            task.scheduled_start_time = None
+            task.scheduled_end_time = None
+        else:
+            if scheduled_start_time is not None:
+                task.scheduled_start_time = scheduled_start_time
+            if scheduled_end_time is not None:
+                task.scheduled_end_time = scheduled_end_time
+
+        if reschedule_count is not None:
+            task.reschedule_count = max(0, int(reschedule_count))
 
         self.session.commit()
         self.session.refresh(task)
@@ -349,6 +371,75 @@ class TaskLifecycleService:
         if task.deadline is not None:
             deadline_str = task.deadline.isoformat() if task.deadline.tzinfo else task.deadline.replace(tzinfo=timezone.utc).isoformat()
 
+        scheduled_start_str = None
+        if getattr(task, "scheduled_start_time", None) is not None:
+            st = task.scheduled_start_time
+            scheduled_start_str = st.isoformat() if st.tzinfo else st.replace(tzinfo=timezone.utc).isoformat()
+
+        scheduled_end_str = None
+        if getattr(task, "scheduled_end_time", None) is not None:
+            et = task.scheduled_end_time
+            scheduled_end_str = et.isoformat() if et.tzinfo else et.replace(tzinfo=timezone.utc).isoformat()
+
+        from backend.app.engines.deadline_risk_engine import DeadlineRiskEngine
+        from backend.app.engines.prioritization_engine import MultiCriteriaPrioritizer
+
+        risk_engine = DeadlineRiskEngine()
+        risk_assessment = risk_engine.assess_task_risk(task, now=self.clock() if self.clock else None)
+
+        # Check if task is blocked by incomplete dependencies
+        is_blocked = False
+        if parsed_deps:
+            completed_dep_count = self.session.query(Task.id).filter(
+                Task.id.in_(parsed_deps),
+                Task.completed.is_(True)
+            ).count()
+            is_blocked = (completed_dep_count < len(parsed_deps))
+
+        # Check blocking count (how many other active tasks depend on this task)
+        blocking_count = 0
+        all_user_tasks = self.session.query(Task.id, Task.dependencies).filter(
+            Task.user_id == task.user_id,
+            Task.completed.is_(False)
+        ).all()
+        for other_id, other_deps_str in all_user_tasks:
+            if other_id != task.id and other_deps_str:
+                other_deps = self._parse_dependencies(other_deps_str)
+                if task.id in other_deps:
+                    blocking_count += 1
+
+        # Goal title if linked
+        goal_title = None
+        if task.goal_id:
+            from backend.app.models.goal import Goal
+            g = self.session.query(Goal.title).filter(Goal.id == task.goal_id).first()
+            if g:
+                goal_title = g[0]
+
+        prioritizer = MultiCriteriaPrioritizer(risk_engine=risk_engine)
+        task_dict = {
+            "id": task.id,
+            "title": task.title,
+            "task_type": task.task_type,
+            "priority": task.priority,
+            "deadline": deadline_str,
+            "dependencies": parsed_deps,
+            "goal_id": task.goal_id,
+            "reschedule_count": int(getattr(task, "reschedule_count", 0) or 0),
+            "completed": bool(task.completed),
+            "lifecycle_state": effective_lifecycle_state,
+        }
+        goal_obj = {"id": task.goal_id, "title": goal_title, "priority": 1} if task.goal_id else None
+        ranked = prioritizer.prioritize_workload(
+            tasks=[task_dict],
+            goals=[goal_obj] if goal_obj else None,
+            now=self.clock() if self.clock else None,
+        )
+        prio_result = ranked[0] if ranked else {}
+        dynamic_prio = prio_result.get("dynamic_priority", float(task.priority * 20.0))
+        prio_breakdown = prio_result.get("priority_breakdown", {})
+        recommended_action = prio_result.get("recommended_action", "Proceed with task.")
+
         return {
             "id": task.id,
             "user_id": task.user_id,
@@ -359,6 +450,12 @@ class TaskLifecycleService:
             "deadline": deadline_str,
             "dependencies": parsed_deps,
             "goal_id": task.goal_id,
+            "goal_title": goal_title,
+            "is_blocked": is_blocked,
+            "blocking_count": blocking_count,
+            "dynamic_priority": dynamic_prio,
+            "priority_breakdown": prio_breakdown,
+            "recommended_action": recommended_action,
             "context_info": task.context_info or "",
             "estimated_duration": task.estimated_duration,
             "estimated_duration_unit": task.estimated_duration_unit,
@@ -367,6 +464,10 @@ class TaskLifecycleService:
             "created_at": None if task.created_at is None else (task.created_at.replace(tzinfo=timezone.utc) if task.created_at.tzinfo is None else task.created_at.astimezone(timezone.utc)).isoformat(),
             "start_time": None if task.start_time is None else (task.start_time.replace(tzinfo=timezone.utc) if task.start_time.tzinfo is None else task.start_time.astimezone(timezone.utc)).isoformat(),
             "end_time": None if task.end_time is None else (task.end_time.replace(tzinfo=timezone.utc) if task.end_time.tzinfo is None else task.end_time.astimezone(timezone.utc)).isoformat(),
+            "scheduled_start_time": scheduled_start_str,
+            "scheduled_end_time": scheduled_end_str,
+            "reschedule_count": int(getattr(task, "reschedule_count", 0) or 0),
+            "deadline_risk": risk_assessment.to_dict(),
             "completed": bool(task.completed),
             "lifecycle_state": effective_lifecycle_state,
             "outcome_valid": task.outcome_valid,
@@ -625,6 +726,9 @@ def ensure_task_lifecycle_schema_for_bind(bind: Any, force: bool = False) -> Non
                 ("productivity_rating", "FLOAT"),
                 ("feedback_notes", "VARCHAR(1000)"),
                 ("feedback_submitted_at", "DATETIME"),
+                ("scheduled_start_time", "DATETIME"),
+                ("scheduled_end_time", "DATETIME"),
+                ("reschedule_count", "INTEGER DEFAULT 0"),
             )
             if name not in existing_columns
         ]

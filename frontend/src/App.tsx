@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErrorBoundary, RouteErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AppShell } from "@/components/layout/AppShell";
@@ -25,6 +25,8 @@ const ExecutiveBrainPage = named(() => import("@/pages/ExecutiveBrainPage"), "Ex
 const OutcomesPage = named(() => import("@/pages/OutcomesPage"), "OutcomesPage");
 const SystemStatusPage = named(() => import("@/pages/SystemStatusPage"), "SystemStatusPage");
 const SettingsPage = named(() => import("@/pages/SettingsPage"), "SettingsPage");
+const AboutPage = named(() => import("@/pages/AboutPage"), "AboutPage");
+const TermsPage = named(() => import("@/pages/TermsPage"), "TermsPage");
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,11 +59,14 @@ function RouteFallback() {
 function RequireAuthentication() {
   const { data: user, isLoading, isError, refetch } = useCurrentUser();
   const setUserId = useUserStore((state) => state.setUserId);
+  const location = useLocation();
 
   useEffect(() => setUserId(user?.id ?? null), [setUserId, user?.id]);
 
+  const isPublicLegalPage = location.pathname === "/about" || location.pathname === "/terms";
+
   if (isLoading) return <FullScreenLoader />;
-  if (isError) {
+  if (isError && !isPublicLegalPage) {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background p-6 text-center">
         <HelioxMark className="size-10" />
@@ -72,7 +77,7 @@ function RequireAuthentication() {
       </main>
     );
   }
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user && !isPublicLegalPage) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
 
@@ -125,6 +130,8 @@ const router = createBrowserRouter([
           { path: "learning", element: <Navigate to="/system" replace /> },
           { path: "system", element: page(SystemStatusPage) },
           { path: "settings", element: page(SettingsPage) },
+          { path: "about", element: page(AboutPage) },
+          { path: "terms", element: page(TermsPage) },
           // Routes from the previous frontend keep working.
           { path: "planning", element: <Navigate to="/optimize" replace /> },
           { path: "optimization", element: <Navigate to="/optimize" replace /> },

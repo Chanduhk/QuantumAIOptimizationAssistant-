@@ -3,8 +3,10 @@ import {
   Activity,
   Atom,
   BrainCircuit,
+  FileText,
   Gauge,
   GraduationCap,
+  Info,
   LayoutDashboard,
   ListChecks,
   Network,
@@ -60,6 +62,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/system", label: "System Status", icon: Gauge, description: "Component inventory and service health" },
       { to: "/settings", label: "Settings", icon: Settings, description: "Account, AI provider and appearance" },
+      { to: "/about", label: "About", icon: Info, description: "Architecture, capabilities, and Gemini 3.8 Flash" },
+      { to: "/terms", label: "Terms & Conditions", icon: FileText, description: "User responsibilities, privacy and legal terms" },
     ],
   },
 ];

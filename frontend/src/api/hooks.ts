@@ -431,6 +431,65 @@ export function useDeleteTask() {
   });
 }
 
+export function useDailyWorkload(targetDate?: string) {
+  const userId = useUserStore((state) => state.userId);
+
+  return useQuery({
+    queryKey: ["tasks", "workload", "daily", userId, targetDate],
+    queryFn: () => {
+      if (userId === null) throw new Error("User ID is required to fetch workload.");
+      return api.tasks.dailyWorkload(userId, targetDate);
+    },
+    enabled: userId !== null,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAllocateSchedule() {
+  const queryClient = useQueryClient();
+  const userId = useUserStore((state) => state.userId);
+
+  return useMutation({
+    mutationFn: (data?: { taskIds?: number[]; dayStart?: number; dayEnd?: number; apply?: boolean }) => {
+      if (userId === null) throw new Error("User ID is required to allocate schedule.");
+      return api.tasks.allocateSchedule({
+        user_id: userId,
+        task_ids: data?.taskIds,
+        day_start: data?.dayStart ?? 8,
+        day_end: data?.dayEnd ?? 20,
+        apply: data?.apply ?? false,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["planning", userId] });
+    },
+  });
+}
+
+export function useRescheduleTasks() {
+  const queryClient = useQueryClient();
+  const userId = useUserStore((state) => state.userId);
+
+  return useMutation({
+    mutationFn: (data?: { affectedTaskId?: number; reason?: string; dayStart?: number; dayEnd?: number; autoApply?: boolean }) => {
+      if (userId === null) throw new Error("User ID is required to reschedule tasks.");
+      return api.tasks.rescheduleSchedule({
+        user_id: userId,
+        affected_task_id: data?.affectedTaskId,
+        reason: data?.reason,
+        day_start: data?.dayStart ?? 8,
+        day_end: data?.dayEnd ?? 20,
+        auto_apply: data?.autoApply ?? false,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["planning", userId] });
+    },
+  });
+}
+
 export function useGoals(status?: string) {
   const userId = useUserStore((state) => state.userId);
 
@@ -664,6 +723,59 @@ export function useBenchmarkVectorMemory() {
     queryKey: ["benchmarks", "vector-memory"],
     queryFn: api.benchmarks.getVectorMemory,
     staleTime: 60_000,
+  });
+}
+
+export function useApplyRecommendation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { user_id: number; proposal_id: string; action_type: string; payload: Record<string, unknown> }) =>
+      api.ai.applyRecommendation(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai", "recommendations"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["goals"] });
+      qc.invalidateQueries({ queryKey: ["tasks", "workload"] });
+    },
+  });
+}
+
+export function useGoalsHealthSummary(enabled = true) {
+  const userId = useUserStore((state) => state.userId);
+  return useQuery({
+    queryKey: ["goals", "summary", "health", userId],
+    queryFn: () => {
+      if (userId === null) throw new Error("Authenticated user is required.");
+      return api.goals.healthSummary(userId);
+    },
+    enabled: userId !== null && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useDependencyGraph(enabled = true) {
+  const userId = useUserStore((state) => state.userId);
+  return useQuery({
+    queryKey: ["tasks", "dependencies", "graph", userId],
+    queryFn: () => {
+      if (userId === null) throw new Error("Authenticated user is required.");
+      return api.tasks.dependencyGraph(userId);
+    },
+    enabled: userId !== null && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function usePrioritizedTasks(enabled = true) {
+  const userId = useUserStore((state) => state.userId);
+  return useQuery({
+    queryKey: ["tasks", "prioritized", userId],
+    queryFn: () => {
+      if (userId === null) throw new Error("Authenticated user is required.");
+      return api.tasks.prioritized(userId);
+    },
+    enabled: userId !== null && enabled,
+    staleTime: 30_000,
   });
 }
 

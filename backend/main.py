@@ -235,6 +235,9 @@ class TaskCreateRequest(BaseModel):
     dependencies: Optional[List[int]] = None
     goal_id: Optional[int] = None
     context_info: Optional[str] = None
+    scheduled_start_time: Optional[datetime] = None
+    scheduled_end_time: Optional[datetime] = None
+    reschedule_count: Optional[int] = None
 
 
 class TaskUpdateRequest(BaseModel):
@@ -249,9 +252,30 @@ class TaskUpdateRequest(BaseModel):
     dependencies: Optional[List[int]] = None
     goal_id: Optional[int] = None
     context_info: Optional[str] = None
+    scheduled_start_time: Optional[datetime] = None
+    scheduled_end_time: Optional[datetime] = None
+    reschedule_count: Optional[int] = None
     clear_deadline: bool = False
     clear_goal: bool = False
     clear_dependencies: bool = False
+    clear_schedule: bool = False
+
+
+class ScheduleAllocateRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    task_ids: Optional[List[int]] = None
+    day_start: int = Field(default=8, ge=0, le=23)
+    day_end: int = Field(default=20, ge=1, le=23)
+    apply: bool = Field(default=False)
+
+
+class ScheduleRescheduleRequest(BaseModel):
+    user_id: int = Field(..., ge=1)
+    affected_task_id: Optional[int] = None
+    reason: Optional[str] = "Task duration adjusted or delay occurred"
+    day_start: int = Field(default=8, ge=0, le=23)
+    day_end: int = Field(default=20, ge=1, le=23)
+    auto_apply: bool = Field(default=False)
 
 
 class GoalCreateRequest(BaseModel):
@@ -393,6 +417,15 @@ class RecommendationResponse(BaseModel):
     schedule_improvements: List[str]
     goal_progress_alerts: List[str]
     behavioral_insights: List[str]
+    actionable_proposals: Optional[List[Dict[str, Any]]] = None
+    cognitive_budget: Optional[Dict[str, Any]] = None
+
+
+class RecommendationApplyRequest(BaseModel):
+    user_id: int
+    proposal_id: str
+    action_type: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CommandResponse(BaseModel):
@@ -632,6 +665,9 @@ def create_task(
             dependencies=request.dependencies,
             goal_id=request.goal_id,
             context_info=request.context_info,
+            scheduled_start_time=request.scheduled_start_time,
+            scheduled_end_time=request.scheduled_end_time,
+            reschedule_count=request.reschedule_count or 0,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -660,9 +696,13 @@ def update_task(
             dependencies=request.dependencies,
             goal_id=request.goal_id,
             context_info=request.context_info,
+            scheduled_start_time=request.scheduled_start_time,
+            scheduled_end_time=request.scheduled_end_time,
+            reschedule_count=request.reschedule_count,
             clear_deadline=request.clear_deadline,
             clear_goal=request.clear_goal,
             clear_dependencies=request.clear_dependencies,
+            clear_schedule=request.clear_schedule,
         )
         return MultiEngineResponse(result={"task": service.serialize_task(task)})
     except ValueError as exc:
@@ -995,6 +1035,27 @@ async def get_recommendations(
 
 
 @app.post(
+    "/api/v1/ai/recommendations/apply",
+    response_model=MultiEngineResponse,
+)
+def apply_recommendation(
+    request: RecommendationApplyRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    recommendation_engine = _build_recommendation_engine(db)
+    try:
+        res = recommendation_engine.apply_proposal(
+            user_id=request.user_id,
+            proposal_id=request.proposal_id,
+            action_type=request.action_type,
+            payload=request.payload,
+        )
+        return MultiEngineResponse(result=res)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
     "/api/v1/ai/command",
     response_model=CommandResponse,
 )
@@ -1308,6 +1369,141 @@ def optimize_schedule(
     return MultiEngineResponse(result=result)
 
 
+@app.post("/api/v1/schedule/allocate", response_model=MultiEngineResponse)
+def allocate_schedule(
+    request: ScheduleAllocateRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.engines.scheduling_engine import SchedulingEngine
+    from backend.app.services.task_lifecycle_service import TaskLifecycleService
+    from backend.app.models.task import Task
+
+    svc = TaskLifecycleService(session=db)
+    all_tasks = svc.get_all_tasks(user_id=request.user_id)
+
+    if request.task_ids:
+        tid_set = set(request.task_ids)
+        target_tasks = [t for t in all_tasks if t.id in tid_set]
+    else:
+        target_tasks = [t for t in all_tasks if not bool(t.completed)]
+
+    serialized_pending = [svc.serialize_task(t) for t in target_tasks]
+    serialized_completed = [svc.serialize_task(t) for t in all_tasks if bool(t.completed)]
+
+    brain = _build_brain(db)
+    patterns = {}
+    try:
+        patterns = brain.behavior_engine.get_behavior_patterns(user_id=request.user_id, days_back=90)
+    except Exception:
+        patterns = {}
+
+    scheduler = SchedulingEngine(session=db)
+    allocation = scheduler.allocate_intelligent_schedule(
+        tasks=serialized_pending,
+        behavior_patterns=patterns,
+        day_start=request.day_start,
+        day_end=request.day_end,
+        existing_scheduled_tasks=serialized_completed,
+    )
+
+    if request.apply and allocation.get("scheduled_tasks"):
+        for item in allocation["scheduled_tasks"]:
+            tid = item.get("id") or item.get("task_id")
+            sh_iso = item.get("scheduled_start_iso")
+            eh_iso = item.get("scheduled_end_iso")
+            if tid and sh_iso and eh_iso:
+                t_obj = db.query(Task).filter(Task.id == int(tid), Task.user_id == request.user_id).first()
+                if t_obj:
+                    try:
+                        s_clean = sh_iso.replace("Z", "+00:00")
+                        e_clean = eh_iso.replace("Z", "+00:00")
+                        t_obj.scheduled_start_time = datetime.fromisoformat(s_clean).replace(tzinfo=None)
+                        t_obj.scheduled_end_time = datetime.fromisoformat(e_clean).replace(tzinfo=None)
+                        t_obj.start_time = t_obj.scheduled_start_time
+                        t_obj.end_time = t_obj.scheduled_end_time
+                    except Exception:
+                        pass
+        db.commit()
+
+    return MultiEngineResponse(result=allocation)
+
+
+@app.post("/api/v1/schedule/reschedule", response_model=MultiEngineResponse)
+def reschedule_schedule(
+    request: ScheduleRescheduleRequest,
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.engines.scheduling_engine import SchedulingEngine
+    from backend.app.services.task_lifecycle_service import TaskLifecycleService
+    from backend.app.services.plan_proposal_service import PlanProposalService
+    from backend.app.models.task import Task
+
+    svc = TaskLifecycleService(session=db)
+    all_tasks = svc.get_all_tasks(user_id=request.user_id)
+    serialized_all = [svc.serialize_task(t) for t in all_tasks]
+
+    brain = _build_brain(db)
+    patterns = {}
+    try:
+        patterns = brain.behavior_engine.get_behavior_patterns(user_id=request.user_id, days_back=90)
+    except Exception:
+        patterns = {}
+
+    scheduler = SchedulingEngine(session=db)
+    resched_res = scheduler.intelligent_reschedule(
+        user_id=request.user_id,
+        tasks=serialized_all,
+        affected_task_id=request.affected_task_id,
+        reason=request.reason or "Task duration adjusted or delay occurred",
+        behavior_patterns=patterns,
+        day_start=request.day_start,
+        day_end=request.day_end,
+    )
+
+    prop_svc = PlanProposalService(session=db)
+    revised_schedule = resched_res.get("revised_schedule", [])
+    proposal = prop_svc.create_proposal(
+        user_id=request.user_id,
+        schedule=revised_schedule,
+        tasks=serialized_all,
+        goal_text=f"Reschedule tasks: {request.reason}",
+        constraints={"day_start": request.day_start, "day_end": request.day_end},
+        provenance={"affected_task_id": request.affected_task_id, "reason": request.reason},
+        raw_result=resched_res,
+    )
+
+    resched_res["proposal_id"] = proposal.id
+    resched_res["proposal_version"] = proposal.version
+    resched_res["proposal_status"] = proposal.status
+
+    if request.auto_apply and revised_schedule:
+        for item in revised_schedule:
+            tid = item.get("id") or item.get("task_id")
+            sh_iso = item.get("scheduled_start_iso")
+            eh_iso = item.get("scheduled_end_iso")
+            if tid and sh_iso and eh_iso:
+                t_obj = db.query(Task).filter(Task.id == int(tid), Task.user_id == request.user_id).first()
+                if t_obj:
+                    try:
+                        s_clean = sh_iso.replace("Z", "+00:00")
+                        e_clean = eh_iso.replace("Z", "+00:00")
+                        t_obj.scheduled_start_time = datetime.fromisoformat(s_clean).replace(tzinfo=None)
+                        t_obj.scheduled_end_time = datetime.fromisoformat(e_clean).replace(tzinfo=None)
+                        t_obj.start_time = t_obj.scheduled_start_time
+                        t_obj.end_time = t_obj.scheduled_end_time
+                        t_obj.reschedule_count = (t_obj.reschedule_count or 0) + 1
+                    except Exception:
+                        pass
+        db.commit()
+        prop_svc.accept_proposal(proposal_id=proposal.id, user_id=request.user_id)
+        resched_res["proposal_status"] = "ACCEPTED"
+        resched_res["auto_applied"] = True
+    else:
+        resched_res["auto_applied"] = False
+
+    return MultiEngineResponse(result=resched_res)
+
+
 @app.post("/api/v1/decision/prioritize", response_model=MultiEngineResponse)
 def prioritize_tasks(
     request: BrainTaskRequest,
@@ -1512,6 +1708,34 @@ def list_goals(
     return GoalListResponse(goals=[service.serialize_goal(g) for g in goals])
 
 
+@app.get("/api/v1/goals/summary/health", response_model=MultiEngineResponse)
+def get_goals_health_summary(
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    service = _build_goal_service(db)
+    goals = service.list_goals(user_id=user_id, status="active")
+    analytics_list = [service.get_goal_analytics(g.id, user_id) for g in goals]
+    total_goals = len(analytics_list)
+    on_track = sum(1 for a in analytics_list if a["health_status"] == "on_track")
+    at_risk = sum(1 for a in analytics_list if a["health_status"] == "at_risk")
+    critical_behind = sum(1 for a in analytics_list if a["health_status"] in ("critical", "behind"))
+    total_remaining_mins = sum(a["remaining_duration_minutes"] for a in analytics_list)
+    avg_health_score = round(sum(a["health_score"] for a in analytics_list) / max(1, total_goals), 1)
+
+    summary = {
+        "user_id": user_id,
+        "total_active_goals": total_goals,
+        "on_track_goals": on_track,
+        "at_risk_goals": at_risk,
+        "critical_behind_goals": critical_behind,
+        "portfolio_health_score": avg_health_score,
+        "total_remaining_hours": round(total_remaining_mins / 60.0, 1),
+        "goals": analytics_list,
+    }
+    return MultiEngineResponse(result=summary)
+
+
 @app.get("/api/v1/goals/{goal_id}", response_model=GoalResponse)
 def get_goal(
     goal_id: int,
@@ -1526,100 +1750,16 @@ def get_goal(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.put("/api/v1/goals/{goal_id}", response_model=GoalResponse)
-@app.patch("/api/v1/goals/{goal_id}", response_model=GoalResponse)
-def update_goal(
-    goal_id: int,
-    request: GoalUpdateRequest,
-    db: Session = Depends(get_db),
-) -> GoalResponse:
-    service = _build_goal_service(db)
-    try:
-        goal = service.update_goal(
-            goal_id=goal_id,
-            user_id=request.user_id,
-            title=request.title,
-            description=request.description,
-            category=request.category,
-            priority=request.priority,
-            target_date=request.target_date,
-            status=request.status,
-            progress=request.progress,
-            clear_target_date=request.clear_target_date,
-        )
-        return GoalResponse(goal=service.serialize_goal(goal))
-    except ValueError as exc:
-        msg = str(exc).lower()
-        if "not found" in msg or "unauthorized" in msg:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.delete("/api/v1/goals/{goal_id}", response_model=MultiEngineResponse)
-def delete_goal(
+@app.get("/api/v1/goals/{goal_id}/analytics", response_model=MultiEngineResponse)
+def get_goal_analytics(
     goal_id: int,
     user_id: int = Query(..., ge=1),
     db: Session = Depends(get_db),
 ) -> MultiEngineResponse:
     service = _build_goal_service(db)
     try:
-        service.delete_goal(goal_id=goal_id, user_id=user_id)
-        return MultiEngineResponse(result={"deleted": True, "goal_id": goal_id})
-    except ValueError as exc:
-        msg = str(exc).lower()
-        if "not found" in msg or "unauthorized" in msg:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-def _build_goal_service(session: Session):
-    from backend.app.services.goal_service import GoalService
-    return GoalService(session)
-
-
-@app.post("/api/v1/goals", response_model=GoalResponse)
-def create_goal(
-    request: GoalCreateRequest,
-    db: Session = Depends(get_db),
-) -> GoalResponse:
-    service = _build_goal_service(db)
-    try:
-        goal = service.create_goal(
-            user_id=request.user_id,
-            title=request.title,
-            description=request.description,
-            category=request.category,
-            priority=request.priority,
-            target_date=request.target_date,
-            status=request.status or "active",
-            progress=request.progress or 0.0,
-        )
-        return GoalResponse(goal=service.serialize_goal(goal))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.get("/api/v1/goals", response_model=GoalListResponse)
-def list_goals(
-    user_id: int = Query(..., ge=1),
-    status: Optional[str] = Query(default=None),
-    db: Session = Depends(get_db),
-) -> GoalListResponse:
-    service = _build_goal_service(db)
-    goals = service.list_goals(user_id=user_id, status=status)
-    return GoalListResponse(goals=[service.serialize_goal(g) for g in goals])
-
-
-@app.get("/api/v1/goals/{goal_id}", response_model=GoalResponse)
-def get_goal(
-    goal_id: int,
-    user_id: int = Query(..., ge=1),
-    db: Session = Depends(get_db),
-) -> GoalResponse:
-    service = _build_goal_service(db)
-    try:
-        goal = service.get_goal(goal_id=goal_id, user_id=user_id)
-        return GoalResponse(goal=service.serialize_goal(goal))
+        analytics = service.get_goal_analytics(goal_id=goal_id, user_id=user_id)
+        return MultiEngineResponse(result=analytics)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -1681,6 +1821,70 @@ def list_tasks(
     all_tasks = svc.get_all_tasks(user_id=user_id)
     serialized = [svc.serialize_task(t) for t in all_tasks]
     return TaskListResponse(tasks=serialized)
+
+
+@app.get("/api/v1/tasks/prioritized", response_model=TaskListResponse)
+def get_prioritized_tasks(
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> TaskListResponse:
+    from backend.app.engines.prioritization_engine import MultiCriteriaPrioritizer
+    from backend.app.services.goal_service import GoalService
+    from backend.app.services.task_lifecycle_service import TaskLifecycleService
+
+    svc = TaskLifecycleService(session=db)
+    all_tasks = svc.get_all_tasks(user_id=user_id)
+    serialized = [svc.serialize_task(t) for t in all_tasks]
+
+    g_svc = GoalService(session=db)
+    goals = [g_svc.serialize_goal(g) for g in g_svc.list_goals(user_id=user_id, status="active")]
+
+    prioritizer = MultiCriteriaPrioritizer()
+    ranked = prioritizer.prioritize_workload(tasks=serialized, goals=goals)
+    return TaskListResponse(tasks=ranked)
+
+
+@app.get("/api/v1/tasks/dependencies/graph", response_model=MultiEngineResponse)
+def get_tasks_dependency_graph(
+    user_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.engines.dependency_intelligence_engine import DependencyIntelligenceEngine
+    from backend.app.services.task_lifecycle_service import TaskLifecycleService
+
+    svc = TaskLifecycleService(session=db)
+    all_tasks = svc.get_all_tasks(user_id=user_id)
+    serialized = [svc.serialize_task(t) for t in all_tasks]
+
+    engine = DependencyIntelligenceEngine()
+    topology = engine.get_dependency_graph_topology(serialized)
+    return MultiEngineResponse(result=topology)
+
+
+@app.get("/api/v1/tasks/workload/daily", response_model=MultiEngineResponse)
+def get_daily_workload(
+    user_id: int = Query(..., ge=1),
+    target_date: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+) -> MultiEngineResponse:
+    from backend.app.engines.deadline_risk_engine import DeadlineRiskEngine
+    from backend.app.services.task_lifecycle_service import TaskLifecycleService
+
+    dt = None
+    if target_date:
+        try:
+            clean = target_date.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(clean)
+        except Exception:
+            dt = None
+
+    svc = TaskLifecycleService(session=db)
+    all_tasks = svc.get_all_tasks(user_id=user_id)
+    serialized = [svc.serialize_task(t) for t in all_tasks]
+
+    engine = DeadlineRiskEngine()
+    workload = engine.compute_daily_workload(user_id=user_id, tasks=serialized, target_date=dt)
+    return MultiEngineResponse(result=workload)
 
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskResponse)

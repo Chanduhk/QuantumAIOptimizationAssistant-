@@ -88,3 +88,93 @@ export function sortTasks(tasks: Task[], sort: "priority" | "recent" | "duration
   if (sort === "duration") copy.sort((a, b) => (b.estimated_duration ?? 0) - (a.estimated_duration ?? 0));
   return copy;
 }
+
+export interface DeadlineCountdownResult {
+  countdownText: string;
+  isOverdue: boolean;
+  minutesRemaining: number;
+  formattedDeadline: string;
+}
+
+export function formatDeadlineCountdown(deadlinestr: string | null | undefined, nowMs = Date.now()): DeadlineCountdownResult | null {
+  if (!deadlinestr) return null;
+  const deadlineDate = parseUtcDate(deadlinestr);
+  if (!deadlineDate || isNaN(deadlineDate.getTime())) return null;
+
+  const diffMs = deadlineDate.getTime() - nowMs;
+  const isOverdue = diffMs < 0;
+  const absDiffSec = Math.floor(Math.abs(diffMs) / 1000);
+  const minutes = Math.floor(absDiffSec / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  let countdownText = "";
+  if (isOverdue) {
+    if (days > 0) countdownText = `Overdue by ${days}d ${hours % 24}h`;
+    else if (hours > 0) countdownText = `Overdue by ${hours}h ${minutes % 60}m`;
+    else countdownText = `Overdue by ${minutes}m`;
+  } else {
+    if (days > 0) countdownText = `In ${days}d ${hours % 24}h`;
+    else if (hours > 0) countdownText = `In ${hours}h ${minutes % 60}m`;
+    else countdownText = `In ${minutes}m`;
+  }
+
+  const formattedDeadline = deadlineDate.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return {
+    countdownText,
+    isOverdue,
+    minutesRemaining: Math.floor(diffMs / 60000),
+    formattedDeadline,
+  };
+}
+
+export function formatScheduledSlot(startStr?: string | null, endStr?: string | null): string | null {
+  if (!startStr) return null;
+  const start = parseUtcDate(startStr);
+  if (!start || isNaN(start.getTime())) return null;
+  const end = endStr ? parseUtcDate(endStr) : null;
+
+  const sTime = start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (end && !isNaN(end.getTime())) {
+    const eTime = end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return `${sTime} – ${eTime}`;
+  }
+  return `At ${sTime}`;
+}
+
+export interface RiskMeta {
+  level: "overdue" | "high" | "moderate" | "low" | "scheduled" | "none";
+  label: string;
+  tone: BadgeTone;
+  badgeClass: string;
+}
+
+export function getTaskRiskMeta(task: Task, isOverdueCalc = false): RiskMeta {
+  if (task.completed || task.lifecycle_state === "completed") {
+    return { level: "none", label: "Completed", tone: "success", badgeClass: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" };
+  }
+
+  const risk = task.deadline_risk;
+  if (isOverdueCalc || risk?.is_overdue || risk?.risk_level === "overdue") {
+    return { level: "overdue", label: "Overdue", tone: "error", badgeClass: "border-red-500/40 text-red-400 bg-red-500/15 animate-pulse" };
+  }
+  if (risk?.risk_level === "high") {
+    return { level: "high", label: "High Risk", tone: "error", badgeClass: "border-red-500/30 text-red-400 bg-red-500/10" };
+  }
+  if (risk?.risk_level === "moderate") {
+    return { level: "moderate", label: "Approaching", tone: "warning", badgeClass: "border-amber-500/30 text-amber-400 bg-amber-500/10" };
+  }
+  if (risk?.risk_level === "low") {
+    return { level: "low", label: "On Track", tone: "success", badgeClass: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" };
+  }
+  if (task.scheduled_start_time) {
+    return { level: "scheduled", label: "Scheduled", tone: "primary", badgeClass: "border-sky-500/30 text-sky-400 bg-sky-500/10" };
+  }
+  return { level: "none", label: "No Deadline", tone: "neutral", badgeClass: "border-neutral-500/30 text-neutral-400 bg-neutral-500/10" };
+}

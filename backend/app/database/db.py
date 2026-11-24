@@ -109,6 +109,29 @@ def get_pool_status() -> dict:
     return status
 
 
+def ensure_schema_compatibility() -> None:
+    """Ensure newly added columns exist in existing databases without destructive re-creation."""
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            if engine.url.drivername.startswith("sqlite"):
+                raw_conn = getattr(conn, "connection", None)
+                if raw_conn is not None and hasattr(raw_conn, "cursor"):
+                    cursor = raw_conn.cursor()
+                    cursor.execute("PRAGMA table_info(tasks);")
+                    existing_cols = {row[1] for row in cursor.fetchall()}
+                    if "scheduled_start_time" not in existing_cols:
+                        conn.execute(text("ALTER TABLE tasks ADD COLUMN scheduled_start_time DATETIME;"))
+                    if "scheduled_end_time" not in existing_cols:
+                        conn.execute(text("ALTER TABLE tasks ADD COLUMN scheduled_end_time DATETIME;"))
+                    if "reschedule_count" not in existing_cols:
+                        conn.execute(text("ALTER TABLE tasks ADD COLUMN reschedule_count INTEGER NOT NULL DEFAULT 0;"))
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Schema compatibility check notice: %s", exc)
+
+
+
 def init_db(database_url: Optional[str] = None) -> Engine:
     """Reconfigure the global engine and session factory."""
     global engine, SessionLocal
@@ -135,6 +158,7 @@ def create_tables(database_url: Optional[str] = None) -> None:
     from backend.app.services.task_lifecycle_service import ensure_task_lifecycle_schema_for_bind
 
     ensure_task_lifecycle_schema_for_bind(engine)
+    ensure_schema_compatibility()
 
 
 def get_db() -> Generator[Session, None, None]:

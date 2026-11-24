@@ -1,6 +1,6 @@
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, CheckCircle2, ListChecks, Pencil, Plus, Target } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Clock, ListChecks, Pencil, Plus, Target } from "lucide-react";
 import type { Goal, Task } from "@/api/endpoints";
 import { useGoals, useTasks } from "@/api/hooks";
 import { Badge } from "@/components/ui/Badge";
@@ -81,9 +81,19 @@ export function GoalList({ onSelectGoal }: { onSelectGoal?: (goal: Goal) => void
           <AnimatePresence initial={false}>
             {goals.map((g) => {
               const stats = goalStats.get(g.id) || { total: 0, completed: 0 };
-              const progressPct = Math.round((g.progress ?? 0) * 100);
+              const rawProgress = g.progress ?? 0;
+              const progressPct = Math.min(100, Math.max(0, Math.round(rawProgress > 1.0 ? rawProgress : rawProgress * 100)));
               const targetDate = g.target_date ? new Date(g.target_date) : null;
               const isPastTarget = targetDate && targetDate.getTime() < Date.now() && g.status !== "completed";
+
+              const healthTone =
+                g.health_status === "on_track"
+                  ? "success"
+                  : g.health_status === "at_risk"
+                  ? "warning"
+                  : g.health_status === "critical" || g.health_status === "behind"
+                  ? "error"
+                  : "primary";
 
               return (
                 <motion.div
@@ -107,6 +117,16 @@ export function GoalList({ onSelectGoal }: { onSelectGoal?: (goal: Goal) => void
                           >
                             {g.status}
                           </Badge>
+                          {g.health_status && g.status !== "completed" && (
+                            <Badge tone={healthTone} className="capitalize text-[10px]">
+                              {g.health_status.replace("_", " ")}
+                            </Badge>
+                          )}
+                          {g.blocked_task_count && g.blocked_task_count > 0 ? (
+                            <Badge tone="error" className="text-[10px]">
+                              {g.blocked_task_count} blocked
+                            </Badge>
+                          ) : null}
                           <Badge tone="neutral" className="font-mono text-[10px]">
                             P{g.priority}
                           </Badge>
@@ -139,7 +159,12 @@ export function GoalList({ onSelectGoal }: { onSelectGoal?: (goal: Goal) => void
                     {/* Progress bar */}
                     <div>
                       <div className="flex justify-between text-[11px] text-content-tertiary mb-1">
-                        <span>Progress</span>
+                        <span className="inline-flex items-center gap-1">
+                          Progress
+                          {g.target_date_feasible === false && g.status !== "completed" && (
+                            <span className="text-status-error text-[10px] font-medium">(Target at risk)</span>
+                          )}
+                        </span>
                         <span className="font-mono font-medium">{progressPct}%</span>
                       </div>
                       <div className="h-1.5 w-full rounded-full bg-surface-2 overflow-hidden">
@@ -157,7 +182,7 @@ export function GoalList({ onSelectGoal }: { onSelectGoal?: (goal: Goal) => void
                       </div>
                     </div>
 
-                    {/* Meta info: target date & linked tasks */}
+                    {/* Meta info: target date, remaining duration, & linked tasks */}
                     <div className="flex items-center justify-between text-[11px] text-content-tertiary">
                       <span className="inline-flex items-center gap-1">
                         <ListChecks className="size-3" />
@@ -165,6 +190,12 @@ export function GoalList({ onSelectGoal }: { onSelectGoal?: (goal: Goal) => void
                           ? `${stats.completed}/${stats.total} tasks`
                           : "No tasks linked"}
                       </span>
+                      {g.remaining_duration_minutes && g.remaining_duration_minutes > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[10px]">
+                          <Clock className="size-3" />
+                          {Math.round(g.remaining_duration_minutes / 60)}h left
+                        </span>
+                      ) : null}
                       {targetDate && (
                         <span
                           className={cn(

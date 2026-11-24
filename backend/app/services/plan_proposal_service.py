@@ -256,6 +256,8 @@ class PlanProposalService:
 
                 task_obj.start_time = start_dt
                 task_obj.end_time = end_dt
+                task_obj.scheduled_start_time = start_dt
+                task_obj.scheduled_end_time = end_dt
                 if task_obj.lifecycle_state != TASK_STATE_COMPLETED and not bool(task_obj.completed):
                     task_obj.lifecycle_state = TASK_STATE_STARTED
                 persisted_task_ids.append(task_obj.id)
@@ -275,6 +277,8 @@ class PlanProposalService:
                 if existing_match:
                     existing_match.start_time = start_dt
                     existing_match.end_time = end_dt
+                    existing_match.scheduled_start_time = start_dt
+                    existing_match.scheduled_end_time = end_dt
                     if existing_match.lifecycle_state != TASK_STATE_COMPLETED and not bool(existing_match.completed):
                         existing_match.lifecycle_state = TASK_STATE_STARTED
                     persisted_task_ids.append(existing_match.id)
@@ -294,6 +298,8 @@ class PlanProposalService:
                     )
                     created_task.start_time = start_dt
                     created_task.end_time = end_dt
+                    created_task.scheduled_start_time = start_dt
+                    created_task.scheduled_end_time = end_dt
                     created_task.lifecycle_state = TASK_STATE_STARTED
                     persisted_task_ids.append(created_task.id)
                     item["task_id"] = created_task.id

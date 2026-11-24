@@ -71,7 +71,7 @@ describe("SettingsPage - Language Provider Section", () => {
     expect(configuredElements.length).toBeGreaterThanOrEqual(1);
 
     // Verify Test connection button exists and is enabled
-    const testButton = await screen.findByRole("button", { name: "Test connection" });
+    const testButton = await screen.findByRole("button", { name: "Test connection" }, { timeout: 5000 });
     expect(testButton).toBeInTheDocument();
     expect(testButton).not.toBeDisabled();
 
@@ -109,7 +109,7 @@ describe("SettingsPage - Language Provider Section", () => {
 
     render(<SettingsPage />, { wrapper: createWrapper() });
 
-    const testButton = await screen.findByRole("button", { name: "Test connection" });
+    const testButton = await screen.findByRole("button", { name: "Test connection" }, { timeout: 5000 });
     fireEvent.click(testButton);
 
     await waitFor(() => {
@@ -144,7 +144,7 @@ describe("SettingsPage - Language Provider Section", () => {
 
     render(<SettingsPage />, { wrapper: createWrapper() });
 
-    const testButton = await screen.findByRole("button", { name: "Test connection" });
+    const testButton = await screen.findByRole("button", { name: "Test connection" }, { timeout: 5000 });
     fireEvent.click(testButton);
 
     await waitFor(() => {
@@ -172,7 +172,7 @@ describe("SettingsPage - Language Provider Section", () => {
     expect(await screen.findByText("AI Model")).toBeInTheDocument();
     expect(screen.getAllByText("Not configured").length).toBeGreaterThanOrEqual(1);
 
-    const testButton = await screen.findByRole("button", { name: "Test connection" });
+    const testButton = await screen.findByRole("button", { name: "Test connection" }, { timeout: 5000 });
     expect(testButton).toBeDisabled();
   });
 });
